@@ -300,3 +300,76 @@ class ResearchSetupOccurrence(Base):
         return f"<ResearchSetupOccurrence(run_id={self.research_run_id}, code={self.setup_code!r}, ts={self.timestamp.isoformat()!r}, split={self.split_type!r})>"
 
 
+class BacktestRun(Base):
+    """Execution run record for backtest evaluation."""
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    research_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("research_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    backtest_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="RUNNING", nullable=False, index=True)
+    trade_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    timeouts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ambiguous: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_r: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('RUNNING', 'SUCCESS', 'FAILED')", name="chk_backtest_run_status"),
+        UniqueConstraint("run_id", name="uq_backtest_run"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BacktestRun(run_id={self.run_id!r}, research_run_id={self.research_run_id}, status={self.status!r})>"
+
+
+class BacktestTrade(Base):
+    """Simulated trade record produced by Backtest Engine V1."""
+    __tablename__ = "backtest_trades"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    backtest_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("backtest_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    setup_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    setup_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    entry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
+    stop_loss: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
+    take_profit: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
+    exit_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5), nullable=True)
+    result: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    r_multiple: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    mae_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    mfe_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    commission: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    slippage: Mapped[Decimal] = mapped_column(Numeric(12, 5), default=Decimal("0.00000"), nullable=False)
+    spread: Mapped[Decimal] = mapped_column(Numeric(12, 5), default=Decimal("0.00000"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="CLOSED", nullable=False)
+    split_type: Mapped[str] = mapped_column(String(16), default="IN_SAMPLE", nullable=False, index=True)
+    ambiguity_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("result IN ('TP', 'SL', 'TIMEOUT', 'INVALID', 'DATA_ERROR', 'AMBIGUOUS', 'SKIPPED_ACTIVE_TRADE')", name="chk_trade_result"),
+        CheckConstraint("status IN ('OPEN', 'CLOSED', 'SKIPPED', 'INVALID')", name="chk_trade_status"),
+        CheckConstraint("direction IN ('BULLISH', 'BEARISH', 'UNDEFINED')", name="chk_trade_direction"),
+        CheckConstraint("split_type IN ('IN_SAMPLE', 'VALIDATION', 'OUT_OF_SAMPLE')", name="chk_trade_split"),
+        CheckConstraint("setup_code IN ('S01', 'S02', 'S03', 'S04', 'S05')", name="chk_trade_setup_code"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BacktestTrade(run_id={self.backtest_run_id}, setup={self.setup_code!r}, entry={self.entry_time.isoformat()!r}, res={self.result!r}, R={self.r_multiple})>"
+
+
+
