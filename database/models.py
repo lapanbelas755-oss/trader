@@ -102,3 +102,64 @@ class MarketFeature(Base):
     def __repr__(self) -> str:
         return f"<MarketFeature(symbol={self.symbol!r}, tf={self.timeframe!r}, ts={self.timestamp.isoformat()!r}, status={self.feature_status!r})>"
 
+
+class MarketStructure(Base):
+    """Market structure events: Swings, BOS, and CHoCH."""
+    __tablename__ = "market_structure"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    structure_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    swing_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reference_swing_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    displacement: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6), nullable=True)
+    strength: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("timeframe IN ('M5', 'M15', 'H1')", name="chk_structure_timeframe"),
+        CheckConstraint("direction IN ('BULLISH', 'BEARISH', 'MIXED', 'TRANSITION', 'UNDEFINED')", name="chk_structure_direction"),
+        UniqueConstraint("symbol", "timeframe", "timestamp", "structure_type", name="uq_market_structure_event"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketStructure(symbol={self.symbol!r}, tf={self.timeframe!r}, type={self.structure_type!r}, price={self.price})>"
+
+
+class LiquidityLevel(Base):
+    """Liquidity levels and lifecycle tracking."""
+    __tablename__ = "liquidity_levels"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    level_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    tolerance: Mapped[Decimal] = mapped_column(Numeric(14, 6), default=Decimal("0.000100"), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="UNTOUCHED", nullable=False)
+    session: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    source_swing_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    start_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    strength: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    sweep_depth: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6), nullable=True)
+    swept_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('UNTOUCHED', 'APPROACHED', 'TOUCHED', 'SWEPT', 'REJECTED', 'ACCEPTED', 'INVALIDATED')", name="chk_liq_status"),
+        UniqueConstraint("symbol", "timeframe", "level_type", "price", "start_timestamp", name="uq_liquidity_level"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LiquidityLevel(symbol={self.symbol!r}, type={self.level_type!r}, price={self.price}, status={self.status!r})>"
+
+
