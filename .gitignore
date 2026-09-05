@@ -1,0 +1,32 @@
+# Environment & Virtual Environment
+.env
+.env.*
+!.env.example
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache & build
+**/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs & Runtime
+logs/
+*.log
+
+# Database local storage / heavy files
+*.db
+*.sqlite3
+*.duckdb
+
+# macOS artifacts
+.DS_Store
+.AppleDouble
+.LSOverride
