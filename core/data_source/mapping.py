@@ -120,3 +120,13 @@ GENERIC_TICK_MAPPING = SourceColumnMapping(
     last_col="last",
     volume_col="volume",
 )
+
+ETC_UTC_OHLC_MAPPING = SourceColumnMapping(
+    data_type=MarketDataType.OHLC,
+    timestamp_col="Etc/UTC",
+    open_col="Open",
+    high_col="High",
+    low_col="Low",
+    close_col="Close",
+    volume_col="Volume",
+)

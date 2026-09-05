@@ -30,6 +30,7 @@ from core.data_source.engine import MarketDataAcquisitionEngine
 from core.data_source.hashing import CanonicalHasher
 from core.data_source.mapping import (
     DUKASCOPY_CSV_MAPPING,
+    ETC_UTC_OHLC_MAPPING,
     GENERIC_OHLC_MAPPING,
     GENERIC_TICK_MAPPING,
     MT5_EXPORT_OHLC_MAPPING,
@@ -49,6 +50,7 @@ MAPPING_PROFILES: dict[str, SourceColumnMapping] = {
     "mt5": MT5_EXPORT_OHLC_MAPPING,
     "dukascopy": DUKASCOPY_CSV_MAPPING,
     "generic_tick": GENERIC_TICK_MAPPING,
+    "etc_utc": ETC_UTC_OHLC_MAPPING,
 }
 
 

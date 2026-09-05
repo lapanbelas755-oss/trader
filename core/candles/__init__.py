@@ -12,6 +12,11 @@ from core.candles.builder import (
     OutOfOrderTickError,
     InvalidTickError,
 )
+from core.candles.resampler import (
+    BidOnlyDataError,
+    CandleResampler,
+    DerivedBidCandleRecord,
+)
 
 __all__ = [
     "Timeframe",
@@ -29,4 +34,7 @@ __all__ = [
     "TimeBucketFloor",
     "OutOfOrderTickError",
     "InvalidTickError",
+    "BidOnlyDataError",
+    "CandleResampler",
+    "DerivedBidCandleRecord",
 ]

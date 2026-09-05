@@ -17,6 +17,8 @@ class DataProvider(str, Enum):
     DUKASCOPY = "DUKASCOPY"
     TRUEFX = "TRUEFX"
     HISTDATA = "HISTDATA"
+    USER_SUPPLIED = "USER_SUPPLIED"
+    UNKNOWN = "UNKNOWN"
 
 
 PROVIDER_SEMANTICS: dict[DataProvider, str] = {
@@ -31,6 +33,12 @@ PROVIDER_SEMANTICS: dict[DataProvider, str] = {
     DataProvider.HISTDATA: (
         "HistData: Provider-specific retail broker tick/M1 historical archive. "
         "Useful for reference and preliminary validation; subject to broker-specific filtering."
+    ),
+    DataProvider.USER_SUPPLIED: (
+        "User-supplied external historical dataset. Origin provider unverified."
+    ),
+    DataProvider.UNKNOWN: (
+        "Unknown/unverified external data provider. Origin unknown."
     ),
 }
 
