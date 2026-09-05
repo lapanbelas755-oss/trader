@@ -2,7 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import BigInteger, Numeric, String, DateTime, Boolean, func, CheckConstraint, UniqueConstraint, Text
+from sqlalchemy import BigInteger, Numeric, String, DateTime, Boolean, func, CheckConstraint, UniqueConstraint, Text, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -213,5 +213,90 @@ class SetupEvidence(Base):
 
     def __repr__(self) -> str:
         return f"<SetupEvidence(setup_id={self.setup_id!r}, key={self.evidence_key!r}, val={self.evidence_value!r})>"
+
+
+class ResearchDataset(Base):
+    """Metadata and content hash tracking for reproducible historical research datasets."""
+    __tablename__ = "research_datasets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    dataset_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    row_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    dataset_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="BUILDING", nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('BUILDING', 'VALIDATED', 'READY', 'REJECTED')", name="chk_dataset_status"),
+        UniqueConstraint("dataset_name", "dataset_version", "content_hash", name="uq_research_dataset"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ResearchDataset(name={self.dataset_name!r}, v={self.dataset_version!r}, hash={self.content_hash[:8]!r}, status={self.status!r})>"
+
+
+class ResearchRun(Base):
+    """Execution run record linking dataset, configuration hash, and outputs."""
+    __tablename__ = "research_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    dataset_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("research_datasets.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="RUNNING", nullable=False, index=True)
+    input_row_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    output_row_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    error_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('RUNNING', 'SUCCESS', 'FAILED')", name="chk_run_status"),
+        UniqueConstraint("run_id", name="uq_research_run"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ResearchRun(run_id={self.run_id!r}, dataset_id={self.dataset_id}, status={self.status!r})>"
+
+
+class ResearchSetupOccurrence(Base):
+    """Recorded setup occurrences observed in historical research datasets."""
+    __tablename__ = "research_setup_occurrences"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    research_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("research_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    setup_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    setup_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    regime: Mapped[str] = mapped_column(String(32), default="UNKNOWN", nullable=False)
+    liquidity_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    structure_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    split_type: Mapped[str] = mapped_column(String(16), default="IN_SAMPLE", nullable=False, index=True)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("split_type IN ('IN_SAMPLE', 'VALIDATION', 'OUT_OF_SAMPLE')", name="chk_occ_split"),
+        CheckConstraint("status IN ('OBSERVE', 'WATCH', 'ARMED', 'FIRE', 'EXPIRED', 'REJECTED')", name="chk_occ_status"),
+        CheckConstraint("setup_code IN ('S01', 'S02', 'S03', 'S04', 'S05')", name="chk_occ_code"),
+        CheckConstraint("direction IN ('BULLISH', 'BEARISH', 'UNDEFINED')", name="chk_occ_direction"),
+        UniqueConstraint("research_run_id", "setup_code", "timestamp", "status", "direction", name="uq_research_occurrence"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ResearchSetupOccurrence(run_id={self.research_run_id}, code={self.setup_code!r}, ts={self.timestamp.isoformat()!r}, split={self.split_type!r})>"
 
 
