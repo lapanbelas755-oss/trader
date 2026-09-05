@@ -372,4 +372,112 @@ class BacktestTrade(Base):
         return f"<BacktestTrade(run_id={self.backtest_run_id}, setup={self.setup_code!r}, entry={self.entry_time.isoformat()!r}, res={self.result!r}, R={self.r_multiple})>"
 
 
+class StatisticalRun(Base):
+    """Run metadata for statistical edge analysis."""
+    __tablename__ = "statistical_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    backtest_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("backtest_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    dataset_split: Mapped[str] = mapped_column(String(32), default="ALL", nullable=False)
+    engine_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="RUNNING", nullable=False)
+    overall_classification: Mapped[str] = mapped_column(String(32), default="INSUFFICIENT_DATA", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('RUNNING', 'SUCCESS', 'FAILED')", name="chk_stat_run_status"),
+        UniqueConstraint("run_id", name="uq_statistical_run"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<StatisticalRun(run_id={self.run_id!r}, status={self.status!r}, edge={self.overall_classification!r})>"
+
+
+class EdgeMetric(Base):
+    """Descriptive and inferential statistical metrics per setup and split."""
+    __tablename__ = "edge_metrics"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    statistical_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("statistical_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    setup_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    split_type: Mapped[str] = mapped_column(String(16), default="ALL", nullable=False, index=True)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    timeouts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ambiguous: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    win_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4), nullable=True)
+    win_rate_ci_lower: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4), nullable=True)
+    win_rate_ci_upper: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4), nullable=True)
+    average_win_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    average_loss_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    expectancy_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    profit_factor: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    total_r: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    max_drawdown_r: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    max_consecutive_losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    mean_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    median_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    std_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    classification: Mapped[str] = mapped_column(String(32), default="INSUFFICIENT_DATA", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("setup_code IN ('S01', 'S02', 'S03', 'S04', 'S05', 'OVERALL')", name="chk_edge_setup_code"),
+        CheckConstraint("split_type IN ('ALL', 'IN_SAMPLE', 'VALIDATION', 'OUT_OF_SAMPLE')", name="chk_edge_split"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<EdgeMetric(setup={self.setup_code!r}, split={self.split_type!r}, N={self.sample_size}, E={self.expectancy_r})>"
+
+
+class EdgeSegment(Base):
+    """Segmented performance breakdown across market conditions."""
+    __tablename__ = "edge_segments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    statistical_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("statistical_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    setup_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    segment_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    segment_value: Mapped[str] = mapped_column(String(64), nullable=False)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    win_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4), nullable=True)
+    expectancy_r: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    profit_factor: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    total_r: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    max_drawdown_r: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("segment_type IN ('REGIME', 'SESSION', 'DIRECTION', 'LIQUIDITY_TYPE', 'SPREAD_BUCKET', 'DAY_OF_WEEK', 'MTF_ALIGNMENT', 'VOLATILITY_STATE')", name="chk_segment_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<EdgeSegment(type={self.segment_type!r}, val={self.segment_value!r}, N={self.sample_size}, E={self.expectancy_r})>"
+
+
+class BootstrapResult(Base):
+    """Bootstrap distribution results for statistical validation."""
+    __tablename__ = "bootstrap_results"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    statistical_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("statistical_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    setup_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    metric: Mapped[str] = mapped_column(String(32), nullable=False)
+    iterations: Mapped[int] = mapped_column(Integer, default=10000, nullable=False)
+    lower_bound: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    median: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    upper_bound: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    positive_fraction: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<BootstrapResult(setup={self.setup_code!r}, metric={self.metric!r}, lower={self.lower_bound}, upper={self.upper_bound}, pos_frac={self.positive_fraction})>"
+
+
+
 

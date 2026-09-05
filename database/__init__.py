@@ -14,6 +14,10 @@ from database.models import (
     ResearchSetupOccurrence,
     BacktestRun,
     BacktestTrade,
+    StatisticalRun,
+    EdgeMetric,
+    EdgeSegment,
+    BootstrapResult,
 )
 from database.migrate import run_migrations
 
@@ -34,6 +38,10 @@ __all__ = [
     "ResearchSetupOccurrence",
     "BacktestRun",
     "BacktestTrade",
+    "StatisticalRun",
+    "EdgeMetric",
+    "EdgeSegment",
+    "BootstrapResult",
     "run_migrations",
 ]
 
