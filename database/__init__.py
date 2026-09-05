@@ -20,6 +20,7 @@ from database.models import (
     BootstrapResult,
     MarketDataset,
     MarketDataQualityReport,
+    DerivedMarketCandle,
 )
 from database.migrate import run_migrations
 
@@ -46,6 +47,7 @@ __all__ = [
     "BootstrapResult",
     "MarketDataset",
     "MarketDataQualityReport",
+    "DerivedMarketCandle",
     "run_migrations",
 ]
 

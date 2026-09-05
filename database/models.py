@@ -528,5 +528,58 @@ class MarketDataQualityReport(Base):
         return f"<MarketDataQualityReport(dataset_id={self.dataset_id}, check={self.check_name!r}, status={self.status!r}, affected={self.affected_rows})>"
 
 
+class DerivedMarketCandle(Base):
+    """Derived multi-timeframe candles aggregated from normalized real ticks."""
+    __tablename__ = "derived_market_candles"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_dataset_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Mid OHLC (Primary Research Stream)
+    mid_open: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    mid_high: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    mid_low: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    mid_close: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+
+    # Bid OHLC
+    bid_open: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    bid_high: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    bid_low: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    bid_close: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+
+    # Ask OHLC
+    ask_open: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    ask_high: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    ask_low: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    ask_close: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+
+    # Spread Statistics
+    spread_open: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_high: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_low: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_close: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_mean: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_median: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_min: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spread_max: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+
+    # Activity & Lineage
+    tick_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    derivation_version: Mapped[str] = mapped_column(String(32), default="V1", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("timeframe IN ('M1', 'M5', 'M15', 'H1')", name="chk_derived_timeframe"),
+        UniqueConstraint("provider", "symbol", "timeframe", "timestamp", name="uq_derived_candles_prov_sym_tf_ts"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DerivedMarketCandle({self.provider} {self.symbol} {self.timeframe} {self.timestamp.isoformat()!r} mid_c={self.mid_close})>"
+
+
 
 

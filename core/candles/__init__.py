@@ -4,6 +4,14 @@ from core.candles.boundary import get_candle_bucket, is_in_bucket
 from core.candles.aggregator import CandleAggregator
 from core.candles.loader import CandleDatabaseLoader, CandleLoadResult
 from core.candles.engine import CandleAggregationEngine, AggregationSummary
+from core.candles.builder import (
+    DerivedCandleRecord,
+    InputTickRecord,
+    TickCandleBuilder,
+    TimeBucketFloor,
+    OutOfOrderTickError,
+    InvalidTickError,
+)
 
 __all__ = [
     "Timeframe",
@@ -15,4 +23,10 @@ __all__ = [
     "CandleLoadResult",
     "CandleAggregationEngine",
     "AggregationSummary",
+    "DerivedCandleRecord",
+    "InputTickRecord",
+    "TickCandleBuilder",
+    "TimeBucketFloor",
+    "OutOfOrderTickError",
+    "InvalidTickError",
 ]
