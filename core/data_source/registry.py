@@ -52,6 +52,7 @@ class DatasetRegistry:
         dataset_name: str,
         provenance: DatasetProvenance,
         quality_report: DatasetQualityReport,
+        auto_commit: bool = True,
     ) -> tuple[MarketDataset, bool]:
         """Register a dataset and its quality audit reports in the database.
         
@@ -115,10 +116,15 @@ class DatasetRegistry:
                 )
                 session.add(report_entry)
 
-            session.commit()
+            if auto_commit:
+                session.commit()
+            else:
+                session.flush()
+
             return dataset_record, True
         except Exception:
-            session.rollback()
+            if auto_commit:
+                session.rollback()
             raise
         finally:
             if should_close:

@@ -65,3 +65,30 @@ When expected market intervals are missing:
 
 ### No Global Liquidity Claim:
 > "NO GLOBAL LIQUIDITY CLAIM: Forex spot trading is decentralized and fragmented. This dataset captures only observed prices and tick counts from the designated provider/source. It does not represent global FX market volume, aggregate interbank liquidity, or institutional order flow."
+
+---
+
+## 7. Operational CLI Developer Command & Ingestion Workflow
+
+### CLI Command
+```bash
+python -m core.data_source import \
+  --file <PATH_TO_DATA_FILE> \
+  --symbol EURUSD \
+  --timeframe M5 \
+  --timezone UTC \
+  --source-name EXTERNAL_HISTORICAL \
+  --mapping generic \
+  --chunk-size 5000 \
+  --output-manifest manifest.json
+```
+
+### Dry Run Flag (`--dry-run`)
+- Executes full file reading, column mapping, timezone conversion to UTC, mathematical OHLC validation, gap identification, and SHA-256 canonical hashing.
+- Guaranteed zero database side-effects (no records written to `market_datasets`, `market_data_quality_reports`, or `market_candles`).
+
+### Atomic Transaction Safety & Rollback
+- Ingestion executes within an atomic database transaction.
+- Ingestion inserts into `market_datasets`, `market_data_quality_reports`, and chunked `market_candles`.
+- If any error occurs during ingestion or insertion, the entire transaction is rolled back cleanly. No partial datasets are ever left in the database.
+
