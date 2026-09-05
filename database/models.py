@@ -2,7 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import BigInteger, Numeric, String, DateTime, func, CheckConstraint, UniqueConstraint
+from sqlalchemy import BigInteger, Numeric, String, DateTime, Boolean, func, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
@@ -51,3 +51,54 @@ class MarketCandle(Base):
 
     def __repr__(self) -> str:
         return f"<MarketCandle(symbol={self.symbol!r}, tf={self.timeframe!r}, ts={self.timestamp.isoformat()!r}, close={self.close})>"
+
+
+class MarketFeature(Base):
+    """Derived market measurements, volatility baselines, and anomalies."""
+    __tablename__ = "market_features"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Geometry & ATR
+    atr: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6), nullable=True)
+    range: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    body: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    price_change: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    movement_efficiency: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Effort vs Result
+    effort: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False)
+    result: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6), nullable=True)
+    effort_result_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 4), nullable=True)
+
+    # Volatility & Baselines
+    volatility: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6), nullable=True)
+    volatility_zscore: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    activity_zscore: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    price_response_zscore: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Anomaly Flags
+    is_anomaly_candidate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_strong_anomaly: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Market Speed
+    movement_speed: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 8), nullable=True)
+    range_per_second: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 8), nullable=True)
+    price_change_per_second: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 8), nullable=True)
+
+    # Lifecycle & Status
+    feature_status: Mapped[str] = mapped_column(String(32), default="WARMUP", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("timeframe IN ('M1', 'M5', 'M15', 'H1')", name="chk_feature_timeframe"),
+        CheckConstraint("feature_status IN ('VALID', 'WARMUP', 'INSUFFICIENT_DATA', 'INVALID')", name="chk_feature_status"),
+        UniqueConstraint("symbol", "timeframe", "timestamp", name="uq_market_features_symbol_tf_ts"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketFeature(symbol={self.symbol!r}, tf={self.timeframe!r}, ts={self.timestamp.isoformat()!r}, status={self.feature_status!r})>"
+
