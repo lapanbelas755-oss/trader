@@ -27,6 +27,26 @@ from core.data_source.mapping import (
 from core.data_source.provenance import ProvenanceManager
 from core.data_source.registry import DatasetRegistry
 from core.data_source.validator import MarketDataValidator, ValidationError
+from core.data_source.importer import MarketDataImporter
+from core.data_source.storage import StorageSafetyChecker, StorageSafetyReport, InsufficientStorageError
+from core.data_source.staged import (
+    DataProvider,
+    DatasetClass,
+    AcquisitionStage,
+    AcquisitionManifest,
+    DatasetPartitioner,
+    FileHasher,
+    StagedAcquisitionManager,
+    ProviderSeparationError,
+    PROVIDER_SEMANTICS,
+)
+from core.data_source.cross_val import (
+    CrossValidationComparator,
+    CrossValidationReport,
+    FeedCharacteristics,
+    SpreadStatistics,
+    CROSS_VALIDATION_DISCLAIMER,
+)
 
 __all__ = [
     "DataFormat",
@@ -54,4 +74,22 @@ __all__ = [
     "ProvenanceManager",
     "DatasetRegistry",
     "MarketDataAcquisitionEngine",
+    "MarketDataImporter",
+    "StorageSafetyChecker",
+    "StorageSafetyReport",
+    "InsufficientStorageError",
+    "DataProvider",
+    "DatasetClass",
+    "AcquisitionStage",
+    "AcquisitionManifest",
+    "DatasetPartitioner",
+    "FileHasher",
+    "StagedAcquisitionManager",
+    "ProviderSeparationError",
+    "PROVIDER_SEMANTICS",
+    "CrossValidationComparator",
+    "CrossValidationReport",
+    "FeedCharacteristics",
+    "SpreadStatistics",
+    "CROSS_VALIDATION_DISCLAIMER",
 ]

@@ -92,3 +92,40 @@ python -m core.data_source import \
 - Ingestion inserts into `market_datasets`, `market_data_quality_reports`, and chunked `market_candles`.
 - If any error occurs during ingestion or insertion, the entire transaction is rolled back cleanly. No partial datasets are ever left in the database.
 
+---
+
+## 8. Staged Historical Acquisition & Provider Separation (V1)
+
+### Provider Semantics & Isolation
+- **Dukascopy**: Historical broker quote feed containing Bid/Ask prices and observed tick frequency.
+- **TrueFX**: Indicative institutional top-of-book tick quotes sourced from major market makers.
+- **HistData**: Provider-specific retail broker tick/M1 historical archive.
+- **Provider Separation Law**: Different providers represent distinct feeds and liquidity pools. Attempting to merge records from different providers into a single dataset raises `ProviderSeparationError` and is strictly prohibited.
+
+### Dataset Classifications
+- `PRIMARY_RESEARCH`: Core benchmark dataset used for structural discovery and baseline backtesting.
+- `CROSS_VALIDATION`: Independent secondary feed used to evaluate robustness across liquidity environments.
+- `REFERENCE_ONLY`: Reference or sanity-check archive.
+
+### Staged Acquisition Milestones
+- `STAGE_1`: 3 months (~90 days)
+- `STAGE_2`: 6 months (~180 days)
+- `STAGE_3`: 1 year (~365 days)
+- `STAGE_4`: 3 years (~1095 days)
+- `STAGE_5`: 5+ years (~1825+ days)
+
+### Partitioning Structure
+All raw datasets are partitioned canonically without being tracked in Git:
+`data/{provider}/{symbol}/{data_type}/{year}/{month}/[day]`
+
+### Storage Safety Checks
+Before launching large imports, `StorageSafetyChecker` audits filesystem capacity via `shutil.disk_usage`. If estimated temporary space and database growth exceeds available disk capacity, ingestion is immediately halted (`InsufficientStorageError`).
+
+### Cross-Validation Framework
+Cross-validation compares feeds structurally without assuming identical candle-level prices:
+- Coverage overlap ratio
+- Spread distribution (mean, median, min, max, std in pips)
+- Volatility ratios (mean candle range)
+- Tick frequency ratios
+- Gap counts and missing intervals
+

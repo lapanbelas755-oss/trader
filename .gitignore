@@ -30,3 +30,8 @@ logs/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Historical Market Data Storage (Raw datasets must never be committed)
+data/
+*.parquet
+*.parquet.gzip
