@@ -18,6 +18,8 @@ from database.models import (
     EdgeMetric,
     EdgeSegment,
     BootstrapResult,
+    MarketDataset,
+    MarketDataQualityReport,
 )
 from database.migrate import run_migrations
 
@@ -42,6 +44,8 @@ __all__ = [
     "EdgeMetric",
     "EdgeSegment",
     "BootstrapResult",
+    "MarketDataset",
+    "MarketDataQualityReport",
     "run_migrations",
 ]
 

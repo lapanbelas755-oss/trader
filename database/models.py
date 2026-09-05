@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for Trader Machine V1 raw market data foundation."""
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Any
 from sqlalchemy import BigInteger, Numeric, String, DateTime, Boolean, func, CheckConstraint, UniqueConstraint, Text, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -477,6 +477,55 @@ class BootstrapResult(Base):
 
     def __repr__(self) -> str:
         return f"<BootstrapResult(setup={self.setup_code!r}, metric={self.metric!r}, lower={self.lower_bound}, upper={self.upper_bound}, pos_frac={self.positive_fraction})>"
+
+
+class MarketDataset(Base):
+    """Registry record for real market data acquisitions and validated datasets."""
+    __tablename__ = "market_datasets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    dataset_name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    source_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_file: Mapped[str] = mapped_column(String(512), nullable=False)
+    format: Mapped[str] = mapped_column(String(16), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    row_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    schema_version: Mapped[str] = mapped_column(String(32), default="V1", nullable=False)
+    quality_status: Mapped[str] = mapped_column(String(32), default="PASS", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("quality_status IN ('PASS', 'PASS_WITH_WARNINGS', 'REJECTED')", name="chk_dataset_quality_status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketDataset(id={self.id}, name={self.dataset_name!r}, symbol={self.symbol!r}, status={self.quality_status!r}, rows={self.row_count})>"
+
+
+class MarketDataQualityReport(Base):
+    """Quality audit check results for a registered market dataset."""
+    __tablename__ = "market_data_quality_reports"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    dataset_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("market_datasets.id", ondelete="CASCADE"), nullable=False, index=True)
+    check_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    affected_rows: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    details: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('PASS', 'WARNING', 'FAIL')", name="chk_quality_check_status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketDataQualityReport(dataset_id={self.dataset_id}, check={self.check_name!r}, status={self.status!r}, affected={self.affected_rows})>"
 
 
 
