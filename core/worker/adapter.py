@@ -80,6 +80,11 @@ class IMT5Adapter(ABC):
         """Query current open positions."""
         pass
 
+    @abstractmethod
+    def get_historical_rates(self, symbol: str, timeframe: str, count: int) -> list[dict[str, Any]]:
+        """Query historical OHLC rates for a specific timeframe."""
+        pass
+
 
 class MockMT5Adapter(IMT5Adapter):
     """Hermetic mock MT5 adapter for macOS Apple Silicon and automated CI testing.
@@ -213,6 +218,25 @@ class MockMT5Adapter(IMT5Adapter):
         if symbol:
             return [p for p in self._positions if p.symbol == symbol]
         return list(self._positions)
+
+    def get_historical_rates(self, symbol: str, timeframe: str, count: int) -> list[dict[str, Any]]:
+        if not self._connected or symbol not in self.symbols_available:
+            return []
+        # Return mock historical data
+        now = datetime.now(timezone.utc)
+        rates = []
+        for i in range(count):
+            t = datetime.fromtimestamp(now.timestamp() - (count - i) * 300, tz=timezone.utc)
+            rates.append({
+                "timestamp": t,
+                "open": Decimal("1.10000"),
+                "high": Decimal("1.10100"),
+                "low": Decimal("1.09900"),
+                "close": Decimal("1.10050"),
+                "tick_volume": 100,
+                "spread": 12,
+            })
+        return rates
 
 
 class RealMT5Adapter(IMT5Adapter):
@@ -414,4 +438,41 @@ class RealMT5Adapter(IMT5Adapter):
                     time=pos_time,
                 )
             )
+        return results
+
+    def get_historical_rates(self, symbol: str, timeframe: str, count: int) -> list[dict[str, Any]]:
+        if not self._connected or not self._mt5:
+            return []
+        
+        # Map timeframe string to MT5 constant
+        tf_map = {
+            "M1": self._mt5.TIMEFRAME_M1,
+            "M5": self._mt5.TIMEFRAME_M5,
+            "M15": self._mt5.TIMEFRAME_M15,
+            "H1": self._mt5.TIMEFRAME_H1,
+            "H4": self._mt5.TIMEFRAME_H4,
+            "D1": self._mt5.TIMEFRAME_D1,
+        }
+        mt5_tf = tf_map.get(timeframe.upper())
+        if mt5_tf is None:
+            logger.error("Unsupported timeframe %s for get_historical_rates", timeframe)
+            return []
+            
+        rates = self._mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
+        if rates is None or len(rates) == 0:
+            logger.error("Failed to fetch rates for %s %s. Check symbol and terminal data.", symbol, timeframe)
+            return []
+            
+        results = []
+        for r in rates:
+            dt = datetime.fromtimestamp(int(r['time']), tz=timezone.utc)
+            results.append({
+                "timestamp": dt,
+                "open": Decimal(str(r['open'])),
+                "high": Decimal(str(r['high'])),
+                "low": Decimal(str(r['low'])),
+                "close": Decimal(str(r['close'])),
+                "tick_volume": int(r['tick_volume']),
+                "spread": int(r['spread']),
+            })
         return results
