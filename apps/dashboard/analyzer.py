@@ -30,6 +30,7 @@ from core.setups.engine import SetupDetectorEngine
 from core.structure.contract import ConfirmedSwing, StructureEvent
 from core.structure.engine import MarketStructureEngine
 from core.structure.smc import SMCEngine
+from core.strategies.xauusd_breakout import XAUUSDBreakoutEngine, XAUUSDBreakoutResult
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ class RealSignalAnalyzer:
             fallback_atr=cfg["fallback_atr"],
         )
         self.smc_engine = SMCEngine()
+        self.xauusd_engine = XAUUSDBreakoutEngine(symbol=self.symbol) if self.symbol == "XAUUSD" else None
         self._sent_signal_ids: set = set()
         self._cooldowns: dict = {}
 
@@ -134,7 +136,12 @@ class RealSignalAnalyzer:
 
         return levels
 
-    def analyze(self, raw_candles: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def analyze(
+        self,
+        raw_candles: List[Dict[str, Any]],
+        current_spread: float = 0.20,
+        is_market_open: bool = True,
+    ) -> Dict[str, Any]:
         """
         Analyzes full candle history against S01-S05 archetypes.
         Returns:
@@ -358,11 +365,99 @@ class RealSignalAnalyzer:
             elif current_status == SetupStatus.WATCH and highest_status == "WAIT":
                 highest_status = "WATCH"
 
+        # 8. XAUUSD Breakout Engine V1 Integration
+        xauusd_data = None
+        if self.xauusd_engine and candles:
+            try:
+                breakout_res = self.xauusd_engine.evaluate(
+                    candles,
+                    current_spread=current_spread,
+                    is_market_open=is_market_open,
+                )
+                xauusd_data = {
+                    "symbol": breakout_res.symbol,
+                    "market_status": breakout_res.market_status,
+                    "session": breakout_res.session,
+                    "spread": breakout_res.spread,
+                    "spread_bad": breakout_res.spread_bad,
+                    "atr": breakout_res.atr,
+                    "atr_state": breakout_res.atr_state,
+                    "volatility_state": breakout_res.volatility_state,
+                    "resistance": breakout_res.resistance,
+                    "support": breakout_res.support,
+                    "level_type": breakout_res.level_type,
+                    "level_touches": breakout_res.level_touches,
+                    "breakout_valid": breakout_res.breakout_valid,
+                    "breakout_type": breakout_res.breakout_type,
+                    "momentum_state": breakout_res.momentum_state,
+                    "retest_state": breakout_res.retest_state,
+                    "entry": breakout_res.entry,
+                    "stop_loss": breakout_res.stop_loss,
+                    "take_profit": breakout_res.take_profit,
+                    "risk_dollars": breakout_res.risk_dollars,
+                    "reward_dollars": breakout_res.reward_dollars,
+                    "rr_ratio": breakout_res.rr_ratio,
+                    "rr_string": breakout_res.rr_string,
+                    "profit_potential_valid": breakout_res.profit_potential_valid,
+                    "score_level_quality": breakout_res.score_level_quality,
+                    "score_breakout_strength": breakout_res.score_breakout_strength,
+                    "score_momentum": breakout_res.score_momentum,
+                    "score_volatility": breakout_res.score_volatility,
+                    "score_retest": breakout_res.score_retest,
+                    "score_session": breakout_res.score_session,
+                    "score_spread": breakout_res.score_spread,
+                    "score_profit_potential": breakout_res.score_profit_potential,
+                    "total_score": breakout_res.total_score,
+                    "status_label": breakout_res.status_label,
+                    "signal": breakout_res.signal,
+                    "veto_reason": breakout_res.veto_reason,
+                    "evidence_checklist": breakout_res.evidence_checklist,
+                }
+
+                # If high quality breakout setup fires, promote to actionable signal
+                if breakout_res.signal in ("BUY", "SELL") and breakout_res.total_score >= 75:
+                    sig_id = f"SIG-XAUUSD-BREAKOUT-{int(eval_time.timestamp())}"
+                    actionable_signals.append({
+                        "id": sig_id,
+                        "symbol": "XAUUSD",
+                        "setup": f"XAU/USD Breakout ({breakout_res.total_score}/100)",
+                        "direction": breakout_res.signal,
+                        "confidence": breakout_res.total_score,
+                        "regime": f"BREAKOUT_{breakout_res.volatility_state}",
+                        "session": breakout_res.session,
+                        "entry": breakout_res.entry,
+                        "sl": breakout_res.stop_loss,
+                        "tp": breakout_res.take_profit,
+                        "sl_pips": round(breakout_res.risk_dollars * 10, 1),
+                        "tp_pips": round(breakout_res.reward_dollars * 10, 1),
+                        "rr_ratio": breakout_res.rr_string,
+                        "momentum": breakout_res.momentum_state,
+                        "momentum_score": float(breakout_res.score_momentum),
+                        "state": "FIRE" if breakout_res.total_score >= 85 else "ARMED",
+                        "timestamp": eval_time.isoformat(),
+                        "should_notify": (breakout_res.total_score >= 85 and is_market_open),
+                        "evidence": [
+                            f"Score: {breakout_res.total_score}/100 ({breakout_res.status_label})",
+                            f"Breakout: {breakout_res.breakout_type}",
+                            f"Resistance: {breakout_res.resistance} | Support: {breakout_res.support}",
+                            f"Risk/Reward: {breakout_res.rr_string}",
+                            f"Retest: {breakout_res.retest_state}",
+                        ],
+                    })
+                    if breakout_res.total_score >= 85:
+                        highest_status = "FIRE"
+                    elif highest_status != "FIRE":
+                        highest_status = "ARMED"
+
+            except Exception as ex:
+                logger.error("Error running XAUUSDBreakoutEngine: %s", ex, exc_info=True)
+
         return {
             "status": highest_status,
             "reason": "Sniper waiting for strict confluence & momentum" if not actionable_signals else f"{len(actionable_signals)} verified setups active (1:3+ RR)",
             "signals": actionable_signals,
             "smc": smc_data,
+            "xauusd_breakout": xauusd_data,
             "metrics": {
                 "atr": float(atr),
                 "swings_detected": len(swings),

@@ -182,17 +182,111 @@
           </div>
         </div>
 
-        <!-- Signals -->
-        <div class="card">
-          <div class="card-hdr">
-            <div class="card-title">
-              <span class="live-dot"></span>
-              Active Signals
+        <!-- Right Column: XAUUSD Terminal & Signals -->
+        <div class="right-col" style="display:flex;flex-direction:column;gap:18px;">
+          <!-- ── XAU/USD TRADER MACHINE TERMINAL WIDGET ── -->
+          <div class="card xauusd-terminal-card" id="xauusd-terminal-card">
+            <div class="xau-term-hdr">
+              <div class="xau-term-title">
+                <span class="xau-term-icon">⚡</span> XAU/USD TRADER MACHINE
+              </div>
+              <span class="xau-term-badge" id="xau-term-badge">ENGINE V1</span>
             </div>
-            <span id="sig-timestamp" style="font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;"></span>
+
+            <div class="xau-term-body">
+              <div class="xau-term-group">
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Market Status</span>
+                  <span class="xau-term-val" id="xau-market-status"><span class="term-dot green"></span> ACTIVE</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Session</span>
+                  <span class="xau-term-val mono" id="xau-session">NEW YORK</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Spread</span>
+                  <span class="xau-term-val mono" id="xau-spread">$0.20</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">ATR</span>
+                  <span class="xau-term-val mono" id="xau-atr">NORMAL</span>
+                </div>
+              </div>
+
+              <div class="xau-term-divider"></div>
+
+              <div class="xau-term-group">
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Resistance</span>
+                  <span class="xau-term-val mono xau-res" id="xau-resistance">—</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Support</span>
+                  <span class="xau-term-val mono xau-sup" id="xau-support">—</span>
+                </div>
+              </div>
+
+              <div class="xau-term-divider"></div>
+
+              <div class="xau-term-group" id="xau-checklist-group">
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Breakout</span>
+                  <span class="xau-term-val" id="xau-breakout">⏳ WAITING</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Momentum</span>
+                  <span class="xau-term-val" id="xau-momentum">⏳ MODERATE</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Volatility</span>
+                  <span class="xau-term-val" id="xau-volatility">⏳ NORMAL</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Retest</span>
+                  <span class="xau-term-val" id="xau-retest">⏳ NONE</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">RR</span>
+                  <span class="xau-term-val mono" id="xau-rr">⏳ N/A</span>
+                </div>
+              </div>
+
+              <div class="xau-term-divider heavy"></div>
+
+              <!-- Score Banner -->
+              <div class="xau-score-box" id="xau-score-box">
+                <div class="xau-score-lbl">BREAKOUT SCORE</div>
+                <div class="xau-score-num">
+                  <span id="xau-score-val">0</span> / 100 <span id="xau-score-flame" style="display:none;">🔥</span>
+                </div>
+                <div class="xau-score-bracket" id="xau-score-bracket">NO TRADE</div>
+              </div>
+
+              <!-- Decision Block -->
+              <div class="xau-decision-box" id="xau-decision-box">
+                <div class="xau-decision-signal sig-none" id="xau-decision-signal">NO TRADE</div>
+                <div class="xau-decision-levels" id="xau-decision-levels" style="display:none;">
+                  <div class="xau-dec-row"><span>ENTRY</span><span class="mono" id="xau-entry">—</span></div>
+                  <div class="xau-dec-row"><span>STOP LOSS</span><span class="mono" id="xau-sl">—</span></div>
+                  <div class="xau-dec-row"><span>TAKE PROFIT</span><span class="mono" id="xau-tp">—</span></div>
+                </div>
+                <div class="xau-veto-banner" id="xau-veto-banner">Mesin menunggu konfirmasi momentum & struktur pasar yang layak.</div>
+              </div>
+            </div>
           </div>
-          <div id="signals-mini" class="sig-list">
-            <div class="empty">Waiting for signals…</div>
+
+          <!-- Signals -->
+          <div class="card">
+            <div class="card-hdr">
+              <div class="card-title">
+                <span class="live-dot"></span>
+                Active Signals
+              </div>
+              <span id="sig-timestamp" style="font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;"></span>
+            </div>
+            <div id="signals-mini" class="sig-list">
+              <div class="empty">Waiting for signals…</div>
+            </div>
           </div>
         </div>
       </div>

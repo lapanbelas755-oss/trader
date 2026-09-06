@@ -92,11 +92,15 @@ def _make_on_tick(symbol: str):
             _last_signal_push[symbol] = now
 
         candles = sym_feed.get_candles() if sym_feed else []
-        analysis = analyzer.analyze(candles)
+        is_open, market_msg = get_market_status()
+        spread_val = 0.20
+        if sym_feed and sym_feed.latest:
+            spread_val = float(sym_feed.latest.get("spread", 0.20))
+
+        analysis = analyzer.analyze(candles, current_spread=spread_val, is_market_open=is_open)
         actionable_signals = analysis.get("signals", [])
 
         # Check Forex market open/close status
-        is_open, market_msg = get_market_status()
         system_status = analysis.get("status", "WAIT")
         system_reason = analysis.get("reason", "Waiting for confluence")
         if not is_open:
@@ -106,15 +110,16 @@ def _make_on_tick(symbol: str):
 
         # Emit current system state to UI
         socketio.emit("signals_update", {
-            "symbol":        symbol,
-            "signals":       actionable_signals,
-            "count":         len(actionable_signals),
-            "status":        system_status,
-            "reason":        system_reason,
-            "metrics":       analysis.get("metrics", {}),
-            "smc":           analysis.get("smc", {}),
-            "market_open":   is_open,
-            "market_status": market_msg,
+            "symbol":          symbol,
+            "signals":         actionable_signals,
+            "count":           len(actionable_signals),
+            "status":          system_status,
+            "reason":          system_reason,
+            "metrics":         analysis.get("metrics", {}),
+            "smc":             analysis.get("smc", {}),
+            "xauusd_breakout": analysis.get("xauusd_breakout"),
+            "market_open":     is_open,
+            "market_status":   market_msg,
         })
 
         # STRICT MULTI-LAYER SAFETY FIREWALL FOR TELEGRAM ALERTS (AGENTS.MD Law #2, #10, #20):
@@ -187,12 +192,15 @@ def on_connect():
         candles = default_feed.get_candles()
         sym = TRACKED_SYMBOLS[0]
         analyzer = _analyzers.get(sym)
-        smc_data = analyzer.analyze(candles).get("smc", {}) if (analyzer and candles) else {}
+        is_open, _ = get_market_status()
+        spread_val = float(default_feed.latest.get("spread", 0.20)) if default_feed.latest else 0.20
+        analysis_res = analyzer.analyze(candles, current_spread=spread_val, is_market_open=is_open) if (analyzer and candles) else {}
         emit("candles_full", {
-            "candles":   candles,
-            "symbol":    sym,
-            "timeframe": "M5",
-            "smc":       smc_data,
+            "candles":         candles,
+            "symbol":          sym,
+            "timeframe":       "M5",
+            "smc":             analysis_res.get("smc", {}),
+            "xauusd_breakout": analysis_res.get("xauusd_breakout"),
         })
 
 
@@ -209,12 +217,15 @@ def on_request_candles(data=None):
     sym_feed = price_feed.get_feed(symbol)
     candles  = sym_feed.get_candles() if sym_feed else []
     analyzer = _analyzers.get(symbol)
-    smc_data = analyzer.analyze(candles).get("smc", {}) if (analyzer and candles) else {}
+    is_open, _ = get_market_status()
+    spread_val = float(sym_feed.latest.get("spread", 0.20)) if (sym_feed and sym_feed.latest) else 0.20
+    analysis_res = analyzer.analyze(candles, current_spread=spread_val, is_market_open=is_open) if (analyzer and candles) else {}
     emit("candles_full", {
-        "candles":   candles,
-        "symbol":    symbol,
-        "timeframe": "M5",
-        "smc":       smc_data,
+        "candles":         candles,
+        "symbol":          symbol,
+        "timeframe":       "M5",
+        "smc":             analysis_res.get("smc", {}),
+        "xauusd_breakout": analysis_res.get("xauusd_breakout"),
     })
 
 
@@ -231,6 +242,20 @@ def on_test_telegram():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/breakout/xauusd")
+def api_breakout_xauusd():
+    """Return latest evaluation of XAUUSD Breakout Engine V1."""
+    analyzer = _analyzers.get("XAUUSD")
+    sym_feed = price_feed.get_feed("XAUUSD")
+    candles = sym_feed.get_candles() if sym_feed else []
+    is_open, _ = get_market_status()
+    spread_val = 0.20
+    if sym_feed and sym_feed.latest:
+        spread_val = float(sym_feed.latest.get("spread", 0.20))
+    analysis = analyzer.analyze(candles, current_spread=spread_val, is_market_open=is_open) if analyzer else {}
+    return jsonify(analysis.get("xauusd_breakout") or {})
 
 
 @app.route("/api/price")

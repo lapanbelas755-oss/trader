@@ -157,7 +157,7 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
 .chip-obs { background: rgba(0,212,255,.08); color: var(--cyan);   border: 1px solid rgba(0,212,255,.25); }
 
 /* ── Main grid ── */
-.main-grid { display: grid; grid-template-columns: 1fr 350px; gap: 18px; }
+.main-grid { display: grid; grid-template-columns: 1fr 380px; gap: 18px; }
 .chart-wrap { overflow: hidden; }
 
 /* ── Signal list ── */
@@ -368,6 +368,182 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
   background: rgba(255, 214, 0, 0.08) !important;
   color: var(--yellow) !important;
   border: 1px solid rgba(255, 214, 0, 0.25) !important;
+}
+
+/* ── XAU/USD TRADER MACHINE TERMINAL WIDGET ── */
+.xauusd-terminal-card {
+  border: 1px solid rgba(255, 215, 0, 0.35) !important;
+  background: linear-gradient(180deg, #10141f 0%, #0b0d14 100%) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(255, 215, 0, 0.06);
+  padding: 0 !important;
+  overflow: hidden;
+}
+.xau-term-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(255, 215, 0, 0.05);
+  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+}
+.xau-term-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffd700;
+  letter-spacing: 0.8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.xau-term-badge {
+  font-size: 9px;
+  font-weight: 800;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.5px;
+}
+.xau-term-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.xau-term-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.xau-term-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.xau-term-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.xau-term-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.xau-res {
+  color: #ff5252 !important;
+  font-weight: 700;
+}
+.xau-sup {
+  color: #00e676 !important;
+  font-weight: 700;
+}
+.xau-term-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 6px 0;
+}
+.xau-term-divider.heavy {
+  height: 1px;
+  background: rgba(255, 215, 0, 0.25);
+  margin: 10px 0;
+}
+.term-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.term-dot.green { background: #00e676; box-shadow: 0 0 6px #00e676; }
+.term-dot.red   { background: #ff4d6d; box-shadow: 0 0 6px #ff4d6d; }
+
+.xau-score-box {
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 215, 0, 0.04);
+  border: 1px dashed rgba(255, 215, 0, 0.3);
+  margin-bottom: 8px;
+}
+.xau-score-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffd700;
+  letter-spacing: 1px;
+}
+.xau-score-num {
+  font-size: 22px;
+  font-weight: 900;
+  font-family: 'JetBrains Mono', monospace;
+  color: #fff;
+  margin: 2px 0;
+}
+.xau-score-bracket {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.bracket-high  { color: #ffd700 !important; }
+.bracket-valid { color: #00e676 !important; }
+.bracket-watch { color: #ffeb3b !important; }
+.bracket-none  { color: var(--muted) !important; }
+
+.xau-decision-box {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 10px;
+}
+.xau-decision-signal {
+  font-size: 16px;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: 1.5px;
+  padding: 6px 0;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.sig-buy {
+  background: rgba(0, 230, 118, 0.18) !important;
+  color: #00e676 !important;
+  border: 1px solid rgba(0, 230, 118, 0.5) !important;
+  box-shadow: 0 0 10px rgba(0, 230, 118, 0.2);
+}
+.sig-sell {
+  background: rgba(255, 77, 109, 0.18) !important;
+  color: #ff4d6d !important;
+  border: 1px solid rgba(255, 77, 109, 0.5) !important;
+  box-shadow: 0 0 10px rgba(255, 77, 109, 0.2);
+}
+.sig-none {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--muted) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+.xau-decision-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+.xau-dec-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-sec);
+}
+.xau-veto-banner {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+  padding-top: 4px;
 }
 
 

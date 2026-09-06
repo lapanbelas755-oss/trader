@@ -84,6 +84,7 @@ socket.on("candles_full", (data) => {
       candleSeries.setData(data.candles);
       if (chart) chart.timeScale().fitContent();
       if (data.smc) updateSMCOverlays(data.smc);
+      if (data.xauusd_breakout) renderXAUUSDBreakoutTerminal(data.xauusd_breakout);
     } catch (e) {
       console.warn("Candle set error:", e);
     }
@@ -94,6 +95,10 @@ socket.on("candles_full", (data) => {
 socket.on("signals_update", (data) => {
   if (!data) return;
   const sym = (data.symbol || "").toUpperCase();
+
+  if (data.xauusd_breakout) {
+    renderXAUUSDBreakoutTerminal(data.xauusd_breakout);
+  }
 
   if (sym === currentSymbol) {
     renderSignalsMini(data.signals || []);
@@ -399,6 +404,11 @@ function setSymbol(sym) {
       }
     })
     .catch(() => {});
+
+  // Fetch XAUUSD Breakout status if switched to Gold
+  if (sym === "XAUUSD") {
+    fetchXAUUSDBreakout();
+  }
 
   // Request fresh candles via WebSocket
   socket.emit("request_candles", { symbol: sym });
@@ -734,9 +744,175 @@ function init() {
   // Periodic refreshes
   setInterval(loadHealth, 30000);
   setInterval(fetchInitialSymbols, 5000);
+  fetchXAUUSDBreakout();
+  setInterval(fetchXAUUSDBreakout, 5000);
 
   logEvent("INFO", "Trader Machine V3 multi-symbol dashboard initialized");
   logEvent("INFO", "Monitoring EURUSD, XAUUSD, GBPUSD, USDJPY, GBPJPY");
+}
+
+// ── XAU/USD Breakout Engine Terminal Renderer ─────────────────────────────────
+function renderXAUUSDBreakoutTerminal(d) {
+  if (!d) return;
+
+  // 1. Market Status
+  const statusEl = document.getElementById("xau-market-status");
+  if (statusEl) {
+    const isAct = d.market_status === "ACTIVE";
+    statusEl.innerHTML = `<span class="term-dot ${isAct ? 'green' : 'red'}"></span> ${d.market_status}`;
+  }
+
+  // 2. Session & Spread & ATR
+  const sessEl = document.getElementById("xau-session");
+  if (sessEl) sessEl.textContent = d.session || "OFF_HOURS";
+
+  const spreadEl = document.getElementById("xau-spread");
+  if (spreadEl) {
+    const spVal = Number(d.spread || 0.20).toFixed(2);
+    spreadEl.textContent = `$${spVal}`;
+    spreadEl.style.color = d.spread_bad ? "var(--red)" : "var(--text)";
+  }
+
+  const atrEl = document.getElementById("xau-atr");
+  if (atrEl) {
+    const atrNum = Number(d.atr || 2.5).toFixed(2);
+    atrEl.textContent = `${d.atr_state || 'NORMAL'} ($${atrNum})`;
+  }
+
+  // 3. Key Levels
+  const resEl = document.getElementById("xau-resistance");
+  if (resEl) {
+    resEl.textContent = d.resistance ? Number(d.resistance).toFixed(2) : "—";
+  }
+  const supEl = document.getElementById("xau-support");
+  if (supEl) {
+    supEl.textContent = d.support ? Number(d.support).toFixed(2) : "—";
+  }
+
+  // 4. Checklist Items
+  const bkEl = document.getElementById("xau-breakout");
+  if (bkEl) {
+    if (d.breakout_valid) {
+      const typeShort = (d.breakout_type || "VALID").replace("_BREAKOUT", "");
+      bkEl.innerHTML = `<span style="color:var(--green)">✅ VALID (${typeShort})</span>`;
+    } else if (d.breakout_type === "WICK_REJECTION") {
+      bkEl.innerHTML = `<span style="color:var(--red)">❌ WICK REJECT</span>`;
+    } else {
+      bkEl.innerHTML = `<span style="color:var(--muted)">⏳ WAITING</span>`;
+    }
+  }
+
+  const momEl = document.getElementById("xau-momentum");
+  if (momEl) {
+    if (d.momentum_state === "STRONG") {
+      momEl.innerHTML = `<span style="color:var(--green)">✅ STRONG</span>`;
+    } else if (d.momentum_state === "MODERATE") {
+      momEl.innerHTML = `<span style="color:var(--yellow)">⚠️ MODERATE</span>`;
+    } else {
+      momEl.innerHTML = `<span style="color:var(--muted)">❌ WEAK</span>`;
+    }
+  }
+
+  const volEl = document.getElementById("xau-volatility");
+  if (volEl) {
+    if (d.volatility_state === "EXPANDING") {
+      volEl.innerHTML = `<span style="color:var(--green)">✅ EXPANDING</span>`;
+    } else if (d.volatility_state === "NORMAL") {
+      volEl.innerHTML = `<span style="color:var(--yellow)">⚠️ NORMAL</span>`;
+    } else {
+      volEl.innerHTML = `<span style="color:var(--muted)">❌ COMPRESSED</span>`;
+    }
+  }
+
+  const retEl = document.getElementById("xau-retest");
+  if (retEl) {
+    if (d.retest_state === "CONFIRMED") {
+      retEl.innerHTML = `<span style="color:var(--green)">✅ CONFIRMED</span>`;
+    } else if (d.retest_state === "PENDING") {
+      retEl.innerHTML = `<span style="color:var(--yellow)">⏳ PENDING</span>`;
+    } else if (d.retest_state === "FAILED") {
+      retEl.innerHTML = `<span style="color:var(--red)">❌ TRAP / COLLAPSE</span>`;
+    } else {
+      retEl.innerHTML = `<span style="color:var(--muted)">⏳ NONE</span>`;
+    }
+  }
+
+  const rrEl = document.getElementById("xau-rr");
+  if (rrEl) {
+    if (d.profit_potential_valid) {
+      rrEl.innerHTML = `<span style="color:var(--cyan)">✅ ${d.rr_string}</span>`;
+    } else if (d.rr_ratio > 0) {
+      rrEl.innerHTML = `<span style="color:var(--red)">❌ ${d.rr_string} (&lt; 1:2)</span>`;
+    } else {
+      rrEl.innerHTML = `<span style="color:var(--muted)">⏳ N/A</span>`;
+    }
+  }
+
+  // 5. Score Box & Flame
+  const scoreVal = d.total_score || 0;
+  const scoreValEl = document.getElementById("xau-score-val");
+  if (scoreValEl) scoreValEl.textContent = scoreVal;
+
+  const flameEl = document.getElementById("xau-score-flame");
+  if (flameEl) {
+    flameEl.style.display = scoreVal >= 85 ? "inline" : "none";
+  }
+
+  const bracketEl = document.getElementById("xau-score-bracket");
+  if (bracketEl) {
+    bracketEl.textContent = d.status_label || "NO TRADE";
+    bracketEl.className = "xau-score-bracket " + (
+      scoreVal >= 85 ? "bracket-high" :
+      scoreVal >= 75 ? "bracket-valid" :
+      scoreVal >= 60 ? "bracket-watch" : "bracket-none"
+    );
+  }
+
+  // 6. Decision Block
+  const sigEl = document.getElementById("xau-decision-signal");
+  const levelsEl = document.getElementById("xau-decision-levels");
+  const vetoEl = document.getElementById("xau-veto-banner");
+
+  if (sigEl) {
+    if (d.signal === "BUY") {
+      sigEl.textContent = "BUY";
+      sigEl.className = "xau-decision-signal sig-buy";
+    } else if (d.signal === "SELL") {
+      sigEl.textContent = "SELL";
+      sigEl.className = "xau-decision-signal sig-sell";
+    } else {
+      sigEl.textContent = "NO TRADE";
+      sigEl.className = "xau-decision-signal sig-none";
+    }
+  }
+
+  if (d.signal === "BUY" || d.signal === "SELL") {
+    if (levelsEl) levelsEl.style.display = "flex";
+    if (vetoEl) vetoEl.style.display = "none";
+    const entryEl = document.getElementById("xau-entry");
+    if (entryEl) entryEl.textContent = Number(d.entry || 0).toFixed(2);
+    const slEl = document.getElementById("xau-sl");
+    if (slEl) slEl.textContent = Number(d.stop_loss || 0).toFixed(2);
+    const tpEl = document.getElementById("xau-tp");
+    if (tpEl) tpEl.textContent = Number(d.take_profit || 0).toFixed(2);
+  } else {
+    if (levelsEl) levelsEl.style.display = "none";
+    if (vetoEl) {
+      vetoEl.style.display = "block";
+      vetoEl.textContent = d.veto_reason || "Mesin tidak memaksakan posisi. Menunggu kondisi market layak.";
+    }
+  }
+}
+
+function fetchXAUUSDBreakout() {
+  fetch("/api/breakout/xauusd")
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.symbol) {
+        renderXAUUSDBreakoutTerminal(d);
+      }
+    })
+    .catch(() => {});
 }
 
 document.addEventListener("DOMContentLoaded", init);
