@@ -144,6 +144,7 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
 .card-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
 .card-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.chart-controls { display: flex; gap: 10px; align-items: center; }
 
 .live-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--green);
@@ -771,3 +772,107 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
 
 
 
+
+/* ── Mobile Responsive (Native App Feel) ── */
+@media (max-width: 480px) {
+  /* Topbar layout */
+  .topbar {
+    flex-direction: column;
+    height: auto;
+    padding: 10px 14px;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .page-title { font-size: 14px; }
+  .page-sub { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-left {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+  .topbar-right {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+  .clock { display: none; } /* hide to save space */
+  .live-price-block { flex: 1; justify-content: space-between; padding: 6px 10px; }
+  .lp-bid { font-size: 16px; }
+  .lp-symbol { font-size: 9px; }
+  .lp-spread { font-size: 9px; }
+  
+  /* Page padding */
+  .page { padding: 10px; gap: 10px; }
+  
+  /* Symbol Watchlist - make it scrollable, hide scrollbar */
+  .symbol-bar {
+    padding: 4px 0 0 0;
+    gap: 6px;
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  .symbol-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .sym-pill { padding: 8px 10px; gap: 6px; }
+  .sym-pill-name { font-size: 11px; }
+  
+  /* Stat cards */
+  .stat-bar { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat-pill { padding: 10px; border-radius: 10px; }
+  .sp-label { font-size: 8px; margin-bottom: 2px; }
+  .sp-val { font-size: 14px; margin-bottom: 2px; }
+  .sp-tag { font-size: 8px; }
+
+  /* Chart controls & Header */
+  .card-hdr {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .card-title { font-size: 11px; }
+  .chart-controls {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .tf-btn-group { flex-wrap: wrap; justify-content: flex-start; gap: 4px; }
+  .tf-btn { padding: 4px 10px; font-size: 10px; }
+  
+  /* SMC Legend */
+  .smc-legend-bar {
+    padding: 8px 10px;
+    gap: 6px;
+    justify-content: flex-start;
+    font-size: 9px;
+  }
+  .smc-legend-item { gap: 4px; }
+
+  /* Multi-TF Confluence strip */
+  .chart-mtf-strip {
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 4px;
+    height: auto;
+    justify-content: center;
+  }
+  .mtf-strip-lbl { width: 100%; text-align: center; margin-right: 0; margin-bottom: 2px; font-size: 9px; }
+  .mtf-tag { font-size: 8px; padding: 2px 4px; gap: 3px; }
+  .tag-tf { padding: 1px 3px; }
+  
+  /* Terminal / Right column */
+  .xau-term-hdr { padding: 8px 10px; }
+  .xau-term-title { font-size: 10px; }
+  .xau-term-badge { font-size: 8px; padding: 2px 4px; }
+  .xau-term-body { padding: 8px 10px; }
+  .xau-term-row { font-size: 11px; }
+  .xau-term-label { font-size: 9px; }
+  .xau-term-val { font-size: 10px; }
+  .xau-score-breakdown { gap: 2px; padding: 4px; }
+  .sb-lbl { font-size: 7px; }
+  .sb-val { font-size: 9px; }
+}
