@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from apps.dashboard.price_feed import feed as price_feed, TRACKED_SYMBOLS
 from apps.dashboard import telegram_bot as tg
 from apps.dashboard.analyzer import RealSignalAnalyzer
+from apps.dashboard.market_hours import is_forex_market_open, get_market_status
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -94,27 +95,69 @@ def _make_on_tick(symbol: str):
         analysis = analyzer.analyze(candles)
         actionable_signals = analysis.get("signals", [])
 
+        # Check Forex market open/close status
+        is_open, market_msg = get_market_status()
+        system_status = analysis.get("status", "WAIT")
+        system_reason = analysis.get("reason", "Waiting for confluence")
+        if not is_open:
+            if system_status in ("WAIT", "WATCH"):
+                system_status = "MARKET_CLOSED"
+                system_reason = market_msg
+
         # Emit current system state to UI
         socketio.emit("signals_update", {
-            "symbol":  symbol,
-            "signals": actionable_signals,
-            "count":   len(actionable_signals),
-            "status":  analysis.get("status", "WAIT"),
-            "reason":  analysis.get("reason", "Waiting for confluence"),
-            "metrics": analysis.get("metrics", {}),
+            "symbol":        symbol,
+            "signals":       actionable_signals,
+            "count":         len(actionable_signals),
+            "status":        system_status,
+            "reason":        system_reason,
+            "metrics":       analysis.get("metrics", {}),
+            "market_open":   is_open,
+            "market_status": market_msg,
         })
 
-        # Send Telegram ONLY for validated high-confidence ARMED/FIRE setups on REAL OBSERVED data
+        # STRICT MULTI-LAYER SAFETY FIREWALL FOR TELEGRAM ALERTS (AGENTS.MD Law #2, #10, #20):
+        # Prevent unwanted alerts during research, weekend closures, or on stale candles
         feed_source = sym_feed.source if sym_feed else "UNKNOWN"
         for s in actionable_signals:
-            # STRICT SAFETY FIREWALL (AGENTS.MD Law #2, Law #10, Law #20):
-            # Absolutely block Telegram notifications if underlying price feed is SIMULATION!
+            # GATE 1: Environment Switch — Are Telegram signal broadcasts enabled?
+            if not tg.are_signals_enabled():
+                logger.debug("🛡️ Telegram alert BLOCKED for %s: TELEGRAM_SIGNALS_ENABLED is false (Research Mode)", s["id"])
+                continue
+
+            # GATE 2: Market Hours Guard — Never send live signals when Forex market is closed
+            if not is_open:
+                logger.info("🛡️ Telegram alert BLOCKED for %s: Forex market is closed (Weekend)", s["id"])
+                continue
+
+            # GATE 3: Data Source Guard — Never send signals on simulated feeds
             if feed_source == "SIMULATION":
                 logger.debug("🛡️ Telegram alert BLOCKED for %s: Source is SIMULATION (real data required)", s["id"])
                 continue
 
+            # GATE 4: Candle Freshness Guard — Never send signals on historical or stale candles
+            sig_ts_str = s.get("timestamp")
+            is_fresh = False
+            if sig_ts_str:
+                try:
+                    sig_dt = datetime.fromisoformat(sig_ts_str)
+                    if sig_dt.tzinfo is None:
+                        sig_dt = sig_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = abs((datetime.now(timezone.utc) - sig_dt).total_seconds())
+                    # M5 candle: must have closed within last 15 minutes (900 seconds)
+                    if age_seconds <= 900:
+                        is_fresh = True
+                    else:
+                        logger.info("🛡️ Telegram alert BLOCKED for %s: Candle is stale (age: %.1f hours)", s["id"], age_seconds / 3600.0)
+                except Exception as ex:
+                    logger.warning("Could not parse signal timestamp %s: %s", sig_ts_str, ex)
+
+            if not is_fresh:
+                continue
+
+            # GATE 5: Sniper Cooldown & Setup State verification
             if s.get("should_notify"):
-                logger.info("⚡ ARMED/FIRE setup verified on REAL market data (%s)! Sending Telegram: %s", feed_source, s["id"])
+                logger.info("⚡ ARMED/FIRE setup verified on LIVE market data (%s)! Sending Telegram: %s", feed_source, s["id"])
                 sent = tg.send_signal(s)
                 if sent:
                     analyzer.mark_signal_sent(s["id"])
@@ -392,12 +435,16 @@ def api_telegram_status():
 
 @app.route("/api/info")
 def api_info():
+    is_open, market_msg = get_market_status()
     return jsonify({
-        "name":            "Trader Machine V1",
-        "version":         "3.0.0-multisymbol",
-        "mode":            "RESEARCH / DEMO ONLY",
-        "price_source":    price_feed.source,
-        "tracked_symbols": TRACKED_SYMBOLS,
+        "name":                     "Trader Machine V1",
+        "version":                  "3.0.0-multisymbol",
+        "mode":                     "RESEARCH / DEMO ONLY",
+        "price_source":             price_feed.source,
+        "tracked_symbols":          TRACKED_SYMBOLS,
+        "market_open":              is_open,
+        "market_status":            market_msg,
+        "telegram_signals_enabled": tg.are_signals_enabled(),
     })
 
 
@@ -409,22 +456,30 @@ if __name__ == "__main__":
     price_feed.start()
 
     tg_info = tg.verify()
+    signals_enabled = tg.are_signals_enabled()
     if tg_info.get("configured"):
-        tg.send_startup(tracked_symbols=TRACKED_SYMBOLS)
-        logger.info(f"Telegram connected: @{tg_info.get('bot_username')}")
+        if signals_enabled:
+            tg.send_startup(tracked_symbols=TRACKED_SYMBOLS)
+            logger.info(f"Telegram signals ACTIVE: @{tg_info.get('bot_username')}")
+        else:
+            logger.info(f"Telegram connected: @{tg_info.get('bot_username')} (Signals MUTED: TELEGRAM_SIGNALS_ENABLED=false)")
     else:
         logger.warning("Telegram not configured — add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to .env")
 
+    is_open, market_msg = get_market_status()
     logger.info(f"Price source: {price_feed.source}")
     logger.info(f"Tracked symbols: {TRACKED_SYMBOLS}")
+    logger.info(f"Market status: {market_msg}")
 
     print("\n" + "=" * 65)
     print("  TRADER MACHINE — DASHBOARD V3 (Multi-Symbol Real-Time)")
-    print(f"  Symbols:      {', '.join(TRACKED_SYMBOLS)}")
-    print(f"  Price source: {price_feed.source}")
-    print(f"  Telegram:     {'ACTIVE' if tg_info.get('configured') else 'NOT CONFIGURED'}")
-    print(f"  Fake signals: NONE — all outputs are mathematically derived")
-    print("  URL:  http://localhost:5050")
+    print(f"  Symbols:        {', '.join(TRACKED_SYMBOLS)}")
+    print(f"  Price source:   {price_feed.source}")
+    print(f"  Market:         {'OPEN' if is_open else 'CLOSED (Weekend)'}")
+    print(f"  Telegram Bot:   {'CONNECTED' if tg_info.get('configured') else 'NOT CONFIGURED'}")
+    print(f"  Signal Alerts:  {'ACTIVE' if signals_enabled else 'MUTED (Research Mode — set TELEGRAM_SIGNALS_ENABLED=true to enable)'}")
+    print(f"  Fake signals:   NONE — all outputs are mathematically derived")
+    print("  URL:            http://localhost:5050")
     print("=" * 65 + "\n")
 
     socketio.run(app, host="0.0.0.0", port=5050, debug=False, allow_unsafe_werkzeug=True)

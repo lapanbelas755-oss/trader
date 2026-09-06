@@ -42,6 +42,15 @@ _PIP_MULTIPLIER = {
 }
 
 
+def are_signals_enabled() -> bool:
+    """
+    Checks whether automated trading signals are permitted to be broadcast to Telegram.
+    Strictly defaults to False in RESEARCH mode to avoid unsolicited alerts.
+    Can be enabled by setting TELEGRAM_SIGNALS_ENABLED=true in .env.
+    """
+    return os.getenv("TELEGRAM_SIGNALS_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+
+
 def _is_configured() -> bool:
     return bool(BOT_TOKEN and CHAT_ID)
 
@@ -79,7 +88,12 @@ def send_signal(signal: dict) -> bool:
     Send a formatted trading signal notification.
     Uses dynamic symbol from signal dict.
     Pips are formatted correctly per symbol type (Forex vs Gold/JPY).
+    Strictly blocked if TELEGRAM_SIGNALS_ENABLED is false.
     """
+    if not are_signals_enabled():
+        logger.debug("🛡️ Telegram signal blocked: TELEGRAM_SIGNALS_ENABLED is false (Research Mode)")
+        return False
+
     symbol    = signal.get("symbol", "EURUSD").upper()
     direction = signal.get("direction", "WAIT")
     setup     = signal.get("setup", "Unknown")
@@ -103,6 +117,16 @@ def send_signal(signal: dict) -> bool:
     # Format price decimal places per symbol
     price_fmt = ".2f" if symbol == "XAUUSD" else (".3f" if symbol in ("USDJPY", "GBPJPY") else ".5f")
 
+    # Transparent candle timestamp to avoid confusion with static/weekend data
+    raw_ts = signal.get("timestamp", "")
+    candle_line = ""
+    if raw_ts:
+        try:
+            c_dt = datetime.fromisoformat(raw_ts)
+            candle_line = f"🕯️ Candle:     <code>{c_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC</code>\n"
+        except Exception:
+            candle_line = f"🕯️ Candle:     <code>{raw_ts}</code>\n"
+
     text = (
         f"<b>⚡ TRADER MACHINE SIGNAL</b>\n"
         f"{'─' * 28}\n"
@@ -118,10 +142,11 @@ def send_signal(signal: dict) -> bool:
         f"🌍 Regime:     <code>{regime}</code>\n"
         f"⏰ Session:    <code>{session}</code>\n"
         f"🔥 Confidence: <b>{confidence}%</b>\n"
+        f"{candle_line}"
         f"\n"
         f"{'─' * 28}\n"
         f"⚠️ <i>RESEARCH MODE ONLY — No real execution</i>\n"
-        f"🕐 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
+        f"📡 Sent at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
     return _send(text)
 
@@ -186,13 +211,14 @@ def verify() -> dict:
         if data.get("ok"):
             bot = data["result"]
             return {
-                "configured":    True,
-                "bot_username":  bot.get("username"),
-                "bot_name":      bot.get("first_name"),
-                "chat_id":       CHAT_ID,
+                "configured":       True,
+                "bot_username":     bot.get("username"),
+                "bot_name":         bot.get("first_name"),
+                "chat_id":          CHAT_ID,
+                "signals_enabled":  are_signals_enabled(),
             }
-        return {"configured": False, "error": data.get("description", "Unknown")}
+        return {"configured": False, "signals_enabled": are_signals_enabled(), "error": data.get("description", "Unknown")}
     except Exception as e:
-        return {"configured": False, "error": str(e)}
+        return {"configured": False, "signals_enabled": are_signals_enabled(), "error": str(e)}
 
 
