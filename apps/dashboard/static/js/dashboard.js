@@ -15,8 +15,8 @@ const SYMBOL_CONFIG = {
   GBPJPY: { display: "GBP/JPY",        decimals: 3, pipMul: 100   },
 };
 
-let currentSymbol = "EURUSD";
-let btSymbol      = "EURUSD";
+let currentSymbol = "XAUUSD";
+let btSymbol      = "XAUUSD";
 let prevBid       = null;
 let tickCount     = 0;
 
@@ -635,12 +635,55 @@ async function loadBacktest(symbol = btSymbol) {
       { l: "Data Source",     v: d.source || "—",                                     u: "integrity verified" },
     ];
 
-    el.innerHTML = stats.map(s => `
-      <div class="bt-card">
-        <div class="bt-lbl">${s.l}</div>
-        <div class="bt-val">${s.v}</div>
-        <div class="bt-unit">${s.u}</div>
-      </div>`).join("");
+    if (symbol === "XAUUSD") {
+      try {
+        const xauRes = await fetch("/api/analytics/xauusd");
+        const xd = await xauRes.json();
+        if (xd && xd.by_score_range) {
+          const tableHtml = `
+            <div style="grid-column: 1 / -1; margin-top: 16px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px;">
+              <div style="font-weight: 800; font-size: 13px; color: var(--gold); letter-spacing: 0.5px; margin-bottom: 8px;">
+                ⚡ XAU/USD EXPECTANCY BY SCORE RANGE (Section N)
+              </div>
+              <div style="overflow-x: auto;">
+                <table style="width: 100%; font-size: 12px; border-collapse: collapse; text-align: left;">
+                  <thead>
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--muted);">
+                      <th style="padding: 6px 8px;">Score Bracket</th>
+                      <th style="padding: 6px 8px;">Trades</th>
+                      <th style="padding: 6px 8px;">Win Rate</th>
+                      <th style="padding: 6px 8px;">Avg R</th>
+                      <th style="padding: 6px 8px;">Expectancy</th>
+                      <th style="padding: 6px 8px;">Profit Factor</th>
+                      <th style="padding: 6px 8px;">Max DD (R)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${Object.entries(xd.by_score_range).map(([bracket, m]) => `
+                      <tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">
+                        <td style="padding: 6px 8px; font-weight: 600; color: ${bracket.includes('90') ? '#00e676' : bracket.includes('80') ? 'var(--cyan)' : 'var(--text)'};">${bracket}</td>
+                        <td style="padding: 6px 8px; font-family: monospace;">${m.trades_taken}</td>
+                        <td style="padding: 6px 8px; font-family: monospace; color: ${m.win_rate >= 0.5 ? '#00e676' : 'var(--text)'};">${(m.win_rate * 100).toFixed(1)}%</td>
+                        <td style="padding: 6px 8px; font-family: monospace;">${m.average_r > 0 ? '+' : ''}${m.average_r}R</td>
+                        <td style="padding: 6px 8px; font-family: monospace; font-weight: bold; color: ${m.expectancy > 0 ? '#00e676' : 'var(--red)'};">${m.expectancy > 0 ? '+' : ''}${m.expectancy}R</td>
+                        <td style="padding: 6px 8px; font-family: monospace;">${m.profit_factor}</td>
+                        <td style="padding: 6px 8px; font-family: monospace; color: var(--red);">${m.max_drawdown_r}R</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-size: 10px; color: var(--muted); margin-top: 8px;">
+                False Breakout Rate: <b>${(xd.false_breakout_rate * 100).toFixed(1)}%</b> · Breakout Continuation: <b>${(xd.breakout_continuation_rate * 100).toFixed(1)}%</b> · Candles: ${xd.total_candles}
+              </div>
+            </div>
+          `;
+          el.insertAdjacentHTML("beforeend", tableHtml);
+        }
+      } catch (errXau) {
+        console.warn("XAU analytics fetch error:", errXau);
+      }
+    }
   } catch (e) {
     console.warn("Backtest fetch error:", e);
   }
@@ -789,14 +832,18 @@ function renderXAUUSDBreakoutTerminal(d) {
     supEl.textContent = d.support ? Number(d.support).toFixed(2) : "—";
   }
 
-  // 4. Checklist Items
+  // 4. Checklist Items & Expected Move
   const bkEl = document.getElementById("xau-breakout");
   if (bkEl) {
     if (d.breakout_valid) {
-      const typeShort = (d.breakout_type || "VALID").replace("_BREAKOUT", "");
-      bkEl.innerHTML = `<span style="color:var(--green)">✅ VALID (${typeShort})</span>`;
-    } else if (d.breakout_type === "WICK_REJECTION") {
+      const cat = (d.breakout_category || "VALID_BREAKOUT").replace(/_/g, " ");
+      bkEl.innerHTML = `<span style="color:var(--green)">✅ ${cat}</span>`;
+    } else if (d.breakout_category === "WICK_BREAKOUT" || d.breakout_type === "WICK_REJECTION") {
       bkEl.innerHTML = `<span style="color:var(--red)">❌ WICK REJECT</span>`;
+    } else if (d.breakout_category === "WEAK_BREAKOUT") {
+      bkEl.innerHTML = `<span style="color:var(--yellow)">⚠️ WEAK BREAK</span>`;
+    } else if (d.breakout_category === "FALSE_BREAKOUT_TRAP") {
+      bkEl.innerHTML = `<span style="color:var(--red)">❌ TRAP / COLLAPSE</span>`;
     } else {
       bkEl.innerHTML = `<span style="color:var(--muted)">⏳ WAITING</span>`;
     }
@@ -848,7 +895,18 @@ function renderXAUUSDBreakoutTerminal(d) {
     }
   }
 
-  // 5. Score Box & Flame
+  const expMoveEl = document.getElementById("xau-expected-move");
+  if (expMoveEl) {
+    if (d.expected_move_dollars > 0) {
+      expMoveEl.textContent = `$${Number(d.expected_move_dollars).toFixed(2)} (${d.expected_move_pips} pips)`;
+      expMoveEl.style.color = "var(--cyan)";
+    } else {
+      expMoveEl.textContent = "—";
+      expMoveEl.style.color = "var(--muted)";
+    }
+  }
+
+  // 5. Score Box & Breakdown
   const scoreVal = d.total_score || 0;
   const scoreValEl = document.getElementById("xau-score-val");
   if (scoreValEl) scoreValEl.textContent = scoreVal;
@@ -868,10 +926,25 @@ function renderXAUUSDBreakoutTerminal(d) {
     );
   }
 
-  // 6. Decision Block
+  // Set 8-pillar score values
+  const setSb = (id, val, max) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = `${val || 0}/${max}`;
+  };
+  setSb("sb-lvl", d.score_level_quality, 20);
+  setSb("sb-brk", d.score_breakout_strength, 20);
+  setSb("sb-mom", d.score_momentum, 15);
+  setSb("sb-vol", d.score_volatility, 15);
+  setSb("sb-ret", d.score_retest, 10);
+  setSb("sb-ses", d.score_session, 5);
+  setSb("sb-spr", d.score_spread, 5);
+  setSb("sb-rr",  d.score_profit_potential, 10);
+
+  // 6. Decision Block & Reasons for NO_TRADE (Section L)
   const sigEl = document.getElementById("xau-decision-signal");
   const levelsEl = document.getElementById("xau-decision-levels");
-  const vetoEl = document.getElementById("xau-veto-banner");
+  const notradeCard = document.getElementById("xau-notrade-card");
+  const notradeList = document.getElementById("xau-notrade-list");
 
   if (sigEl) {
     if (d.signal === "BUY") {
@@ -888,7 +961,7 @@ function renderXAUUSDBreakoutTerminal(d) {
 
   if (d.signal === "BUY" || d.signal === "SELL") {
     if (levelsEl) levelsEl.style.display = "flex";
-    if (vetoEl) vetoEl.style.display = "none";
+    if (notradeCard) notradeCard.style.display = "none";
     const entryEl = document.getElementById("xau-entry");
     if (entryEl) entryEl.textContent = Number(d.entry || 0).toFixed(2);
     const slEl = document.getElementById("xau-sl");
@@ -897,9 +970,14 @@ function renderXAUUSDBreakoutTerminal(d) {
     if (tpEl) tpEl.textContent = Number(d.take_profit || 0).toFixed(2);
   } else {
     if (levelsEl) levelsEl.style.display = "none";
-    if (vetoEl) {
-      vetoEl.style.display = "block";
-      vetoEl.textContent = d.veto_reason || "Mesin tidak memaksakan posisi. Menunggu kondisi market layak.";
+    if (notradeCard) {
+      notradeCard.style.display = "block";
+      const reasons = (d.reasons_for_no_trade && d.reasons_for_no_trade.length > 0)
+        ? d.reasons_for_no_trade
+        : [d.veto_reason || "Mesin tidak memaksakan posisi. Menunggu kondisi market layak."];
+      if (notradeList) {
+        notradeList.innerHTML = reasons.map(r => `<li>${r}</li>`).join("");
+      }
     }
   }
 }

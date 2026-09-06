@@ -258,6 +258,43 @@ def api_breakout_xauusd():
     return jsonify(analysis.get("xauusd_breakout") or {})
 
 
+@app.route("/api/setups/xauusd")
+def api_setups_xauusd():
+    """Return historical XAU/USD setups (both actionable and NO_TRADE)."""
+    from core.strategies.xauusd_logger import setup_logger
+    limit = int(request.args.get("limit", 50))
+    return jsonify({
+        "recent_setups": setup_logger.get_recent(limit=limit),
+        "no_trade_setups": setup_logger.get_no_trade_setups(limit=limit),
+        "actionable_setups": setup_logger.get_actionable_setups(limit=limit),
+        "score_distribution": setup_logger.count_by_score_brackets(),
+    })
+
+
+@app.route("/api/analytics/xauusd")
+def api_analytics_xauusd():
+    """Return score-bracket analytics and expectancy validation for XAU/USD."""
+    from core.strategies.xauusd_backtest import XAUUSDBacktestEngine
+    from dataclasses import asdict
+    sym_feed = price_feed.get_feed("XAUUSD")
+    candles = sym_feed.get_candles() if sym_feed else []
+    bt_engine = XAUUSDBacktestEngine()
+    report = bt_engine.run(candles, min_score_to_trade=60)
+    return jsonify({
+        "symbol": "XAUUSD",
+        "total_candles": report.total_candles_evaluated,
+        "total_setups": report.total_setups_observed,
+        "total_trades": report.total_trades_taken,
+        "false_breakout_rate": report.false_breakout_rate,
+        "breakout_continuation_rate": report.breakout_continuation_rate,
+        "overall_metrics": asdict(report.overall_metrics),
+        "by_score_range": {k: asdict(v) for k, v in report.by_score_range.items()},
+        "by_session": {k: asdict(v) for k, v in report.by_session.items()},
+        "by_atr_regime": {k: asdict(v) for k, v in report.by_atr_regime.items()},
+        "by_category": {k: asdict(v) for k, v in report.by_category.items()},
+    })
+
+
 @app.route("/api/price")
 def api_price():
     symbol   = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()

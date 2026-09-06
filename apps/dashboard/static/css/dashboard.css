@@ -546,4 +546,66 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
   padding-top: 4px;
 }
 
+/* ── XAU Score Breakdown Grid ── */
+.xau-score-breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 6px;
+  margin-top: 8px;
+}
+.sb-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  padding: 3px 2px;
+}
+.sb-lbl {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.sb-val {
+  font-size: 10px;
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+/* ── Reasons for NO_TRADE Card (Section L) ── */
+.xau-notrade-card {
+  background: rgba(255, 77, 109, 0.06);
+  border: 1px solid rgba(255, 77, 109, 0.25);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 6px;
+  text-align: left;
+}
+.xau-notrade-hdr {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #ff4d6d;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.xau-notrade-list {
+  margin: 0;
+  padding-left: 14px;
+  font-size: 11px;
+  color: #ffb3c1;
+  line-height: 1.4;
+}
+.xau-notrade-list li {
+  margin-bottom: 2px;
+}
+
+
 

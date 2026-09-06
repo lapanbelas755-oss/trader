@@ -75,11 +75,11 @@
     <header class="topbar">
       <div class="topbar-left">
         <span class="page-title" id="page-title">Dashboard</span>
-        <span class="page-sub" id="page-sub">EURUSD · M5 · WebSocket</span>
+        <span class="page-sub" id="page-sub">XAU/USD (Gold) · M5 · Sniper Breakout Engine</span>
       </div>
       <div class="topbar-right">
         <div class="live-price-block" id="live-price-block">
-          <div class="lp-symbol" id="lp-symbol">EUR/USD</div>
+          <div class="lp-symbol" id="lp-symbol">XAU/USD</div>
           <div class="lp-bid" id="lp-bid">—</div>
           <div class="lp-dir" id="lp-dir">—</div>
           <div class="lp-spread" id="lp-spread">— pips</div>
@@ -93,15 +93,15 @@
     <div class="page active" id="page-dashboard">
       <!-- Watchlist / Symbol Switcher -->
       <div class="symbol-bar" id="symbol-bar">
-        <div class="sym-pill active" data-symbol="EURUSD">
-          <span class="sym-pill-name">EUR/USD</span>
-          <span class="sym-pill-price" id="pill-price-EURUSD">—</span>
-          <span class="sym-pill-tag tag-db" id="pill-tag-EURUSD">DB REAL</span>
-        </div>
-        <div class="sym-pill" data-symbol="XAUUSD">
+        <div class="sym-pill active" data-symbol="XAUUSD">
           <span class="sym-pill-name">XAU/USD (Gold)</span>
           <span class="sym-pill-price" id="pill-price-XAUUSD">—</span>
-          <span class="sym-pill-tag tag-sim" id="pill-tag-XAUUSD">SCALP</span>
+          <span class="sym-pill-tag tag-db" id="pill-tag-XAUUSD">PRIMARY</span>
+        </div>
+        <div class="sym-pill" data-symbol="EURUSD">
+          <span class="sym-pill-name">EUR/USD</span>
+          <span class="sym-pill-price" id="pill-price-EURUSD">—</span>
+          <span class="sym-pill-tag tag-sim" id="pill-tag-EURUSD">OBSERVED</span>
         </div>
         <div class="sym-pill" data-symbol="GBPUSD">
           <span class="sym-pill-name">GBP/USD</span>
@@ -246,8 +246,12 @@
                   <span class="xau-term-val" id="xau-retest">⏳ NONE</span>
                 </div>
                 <div class="xau-term-row">
-                  <span class="xau-term-label">RR</span>
+                  <span class="xau-term-label">RR Target</span>
                   <span class="xau-term-val mono" id="xau-rr">⏳ N/A</span>
+                </div>
+                <div class="xau-term-row">
+                  <span class="xau-term-label">Expected Move</span>
+                  <span class="xau-term-val mono" id="xau-expected-move">—</span>
                 </div>
               </div>
 
@@ -262,6 +266,18 @@
                 <div class="xau-score-bracket" id="xau-score-bracket">NO TRADE</div>
               </div>
 
+              <!-- Score Breakdown Grid -->
+              <div class="xau-score-breakdown" id="xau-score-breakdown">
+                <div class="sb-item"><span class="sb-lbl">LEVEL</span><span class="sb-val mono" id="sb-lvl">0/20</span></div>
+                <div class="sb-item"><span class="sb-lbl">BREAK</span><span class="sb-val mono" id="sb-brk">0/20</span></div>
+                <div class="sb-item"><span class="sb-lbl">MOM</span><span class="sb-val mono" id="sb-mom">0/15</span></div>
+                <div class="sb-item"><span class="sb-lbl">VOL</span><span class="sb-val mono" id="sb-vol">0/15</span></div>
+                <div class="sb-item"><span class="sb-lbl">RET</span><span class="sb-val mono" id="sb-ret">0/10</span></div>
+                <div class="sb-item"><span class="sb-lbl">SES</span><span class="sb-val mono" id="sb-ses">0/5</span></div>
+                <div class="sb-item"><span class="sb-lbl">SPR</span><span class="sb-val mono" id="sb-spr">0/5</span></div>
+                <div class="sb-item"><span class="sb-lbl">RR</span><span class="sb-val mono" id="sb-rr">0/10</span></div>
+              </div>
+
               <!-- Decision Block -->
               <div class="xau-decision-box" id="xau-decision-box">
                 <div class="xau-decision-signal sig-none" id="xau-decision-signal">NO TRADE</div>
@@ -270,7 +286,14 @@
                   <div class="xau-dec-row"><span>STOP LOSS</span><span class="mono" id="xau-sl">—</span></div>
                   <div class="xau-dec-row"><span>TAKE PROFIT</span><span class="mono" id="xau-tp">—</span></div>
                 </div>
-                <div class="xau-veto-banner" id="xau-veto-banner">Mesin menunggu konfirmasi momentum & struktur pasar yang layak.</div>
+                
+                <!-- Section L: Reasons for NO_TRADE Box -->
+                <div class="xau-notrade-card" id="xau-notrade-card">
+                  <div class="xau-notrade-hdr">REASONS FOR NO TRADE:</div>
+                  <ul class="xau-notrade-list" id="xau-notrade-list">
+                    <li>Mesin menunggu kondisi market layak dan breakout valid.</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

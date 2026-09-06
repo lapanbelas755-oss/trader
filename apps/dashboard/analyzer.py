@@ -31,6 +31,7 @@ from core.structure.contract import ConfirmedSwing, StructureEvent
 from core.structure.engine import MarketStructureEngine
 from core.structure.smc import SMCEngine
 from core.strategies.xauusd_breakout import XAUUSDBreakoutEngine, XAUUSDBreakoutResult
+from core.strategies.xauusd_logger import setup_logger, XAUUSDSetupRecord
 
 logger = logging.getLogger(__name__)
 
@@ -153,10 +154,61 @@ class RealSignalAnalyzer:
             }
         """
         if len(raw_candles) < 15:
+            default_xau = None
+            if self.xauusd_engine:
+                res_empty = self.xauusd_engine.evaluate([], current_spread=current_spread, is_market_open=is_market_open)
+                default_xau = {
+                    "symbol": res_empty.symbol,
+                    "market_status": res_empty.market_status,
+                    "session": res_empty.session,
+                    "spread": res_empty.spread,
+                    "spread_bad": res_empty.spread_bad,
+                    "atr": res_empty.atr,
+                    "atr_state": res_empty.atr_state,
+                    "volatility_state": res_empty.volatility_state,
+                    "market_regime": res_empty.market_regime,
+                    "resistance": res_empty.resistance,
+                    "support": res_empty.support,
+                    "level_type": res_empty.level_type,
+                    "level_touches": res_empty.level_touches,
+                    "breakout_valid": res_empty.breakout_valid,
+                    "breakout_type": res_empty.breakout_type,
+                    "breakout_category": res_empty.breakout_category,
+                    "momentum_state": res_empty.momentum_state,
+                    "retest_state": res_empty.retest_state,
+                    "entry": res_empty.entry,
+                    "stop_loss": res_empty.stop_loss,
+                    "take_profit": res_empty.take_profit,
+                    "risk_dollars": res_empty.risk_dollars,
+                    "reward_dollars": res_empty.reward_dollars,
+                    "expected_move_dollars": res_empty.expected_move_dollars,
+                    "expected_move_pips": res_empty.expected_move_pips,
+                    "target_opposing_level": res_empty.target_opposing_level,
+                    "rr_ratio": res_empty.rr_ratio,
+                    "rr_string": res_empty.rr_string,
+                    "profit_potential_valid": res_empty.profit_potential_valid,
+                    "score_level_quality": res_empty.score_level_quality,
+                    "score_breakout_strength": res_empty.score_breakout_strength,
+                    "score_momentum": res_empty.score_momentum,
+                    "score_volatility": res_empty.score_volatility,
+                    "score_retest": res_empty.score_retest,
+                    "score_session": res_empty.score_session,
+                    "score_spread": res_empty.score_spread,
+                    "score_profit_potential": res_empty.score_profit_potential,
+                    "total_score": res_empty.total_score,
+                    "status_label": res_empty.status_label,
+                    "signal": res_empty.signal,
+                    "veto_reason": res_empty.veto_reason,
+                    "reasons_for_no_trade": res_empty.reasons_for_no_trade,
+                    "no_trade_summary": res_empty.no_trade_summary,
+                    "evidence_checklist": res_empty.evidence_checklist,
+                }
             return {
                 "status": "WAIT",
-                "reason": f"Accumulating market candles ({len(raw_candles)}/15 minimum required for M5 analysis)",
+                "reason": f"Accumulating market candles ({len(raw_candles)}/15 minimum required for M5 analysis)" if not default_xau else default_xau["no_trade_summary"],
                 "signals": [],
+                "smc": {},
+                "xauusd_breakout": default_xau,
                 "metrics": {"candles_loaded": len(raw_candles)},
             }
 
@@ -203,10 +255,61 @@ class RealSignalAnalyzer:
                 continue
 
         if len(candles) < 15:
+            default_xau = None
+            if self.xauusd_engine:
+                res_empty = self.xauusd_engine.evaluate(candles, current_spread=current_spread, is_market_open=is_market_open)
+                default_xau = {
+                    "symbol": res_empty.symbol,
+                    "market_status": res_empty.market_status,
+                    "session": res_empty.session,
+                    "spread": res_empty.spread,
+                    "spread_bad": res_empty.spread_bad,
+                    "atr": res_empty.atr,
+                    "atr_state": res_empty.atr_state,
+                    "volatility_state": res_empty.volatility_state,
+                    "market_regime": res_empty.market_regime,
+                    "resistance": res_empty.resistance,
+                    "support": res_empty.support,
+                    "level_type": res_empty.level_type,
+                    "level_touches": res_empty.level_touches,
+                    "breakout_valid": res_empty.breakout_valid,
+                    "breakout_type": res_empty.breakout_type,
+                    "breakout_category": res_empty.breakout_category,
+                    "momentum_state": res_empty.momentum_state,
+                    "retest_state": res_empty.retest_state,
+                    "entry": res_empty.entry,
+                    "stop_loss": res_empty.stop_loss,
+                    "take_profit": res_empty.take_profit,
+                    "risk_dollars": res_empty.risk_dollars,
+                    "reward_dollars": res_empty.reward_dollars,
+                    "expected_move_dollars": res_empty.expected_move_dollars,
+                    "expected_move_pips": res_empty.expected_move_pips,
+                    "target_opposing_level": res_empty.target_opposing_level,
+                    "rr_ratio": res_empty.rr_ratio,
+                    "rr_string": res_empty.rr_string,
+                    "profit_potential_valid": res_empty.profit_potential_valid,
+                    "score_level_quality": res_empty.score_level_quality,
+                    "score_breakout_strength": res_empty.score_breakout_strength,
+                    "score_momentum": res_empty.score_momentum,
+                    "score_volatility": res_empty.score_volatility,
+                    "score_retest": res_empty.score_retest,
+                    "score_session": res_empty.score_session,
+                    "score_spread": res_empty.score_spread,
+                    "score_profit_potential": res_empty.score_profit_potential,
+                    "total_score": res_empty.total_score,
+                    "status_label": res_empty.status_label,
+                    "signal": res_empty.signal,
+                    "veto_reason": res_empty.veto_reason,
+                    "reasons_for_no_trade": res_empty.reasons_for_no_trade,
+                    "no_trade_summary": res_empty.no_trade_summary,
+                    "evidence_checklist": res_empty.evidence_checklist,
+                }
             return {
                 "status": "WAIT",
-                "reason": "Insufficient valid candles after validation",
+                "reason": "Insufficient valid candles after validation" if not default_xau else default_xau["no_trade_summary"],
                 "signals": [],
+                "smc": {},
+                "xauusd_breakout": default_xau,
                 "metrics": {},
             }
 
@@ -383,12 +486,14 @@ class RealSignalAnalyzer:
                     "atr": breakout_res.atr,
                     "atr_state": breakout_res.atr_state,
                     "volatility_state": breakout_res.volatility_state,
+                    "market_regime": breakout_res.market_regime,
                     "resistance": breakout_res.resistance,
                     "support": breakout_res.support,
                     "level_type": breakout_res.level_type,
                     "level_touches": breakout_res.level_touches,
                     "breakout_valid": breakout_res.breakout_valid,
                     "breakout_type": breakout_res.breakout_type,
+                    "breakout_category": breakout_res.breakout_category,
                     "momentum_state": breakout_res.momentum_state,
                     "retest_state": breakout_res.retest_state,
                     "entry": breakout_res.entry,
@@ -396,6 +501,9 @@ class RealSignalAnalyzer:
                     "take_profit": breakout_res.take_profit,
                     "risk_dollars": breakout_res.risk_dollars,
                     "reward_dollars": breakout_res.reward_dollars,
+                    "expected_move_dollars": breakout_res.expected_move_dollars,
+                    "expected_move_pips": breakout_res.expected_move_pips,
+                    "target_opposing_level": breakout_res.target_opposing_level,
                     "rr_ratio": breakout_res.rr_ratio,
                     "rr_string": breakout_res.rr_string,
                     "profit_potential_valid": breakout_res.profit_potential_valid,
@@ -411,8 +519,50 @@ class RealSignalAnalyzer:
                     "status_label": breakout_res.status_label,
                     "signal": breakout_res.signal,
                     "veto_reason": breakout_res.veto_reason,
+                    "reasons_for_no_trade": breakout_res.reasons_for_no_trade,
+                    "no_trade_summary": breakout_res.no_trade_summary,
                     "evidence_checklist": breakout_res.evidence_checklist,
                 }
+
+                # Section M: Log setup (both Actionable Signals and NO_TRADE events)
+                try:
+                    setup_rec = XAUUSDSetupRecord(
+                        timestamp=eval_time.isoformat(),
+                        symbol="XAUUSD",
+                        timeframe="M5",
+                        level=breakout_res.resistance if breakout_res.breakout_type == "BULLISH_BREAKOUT" else breakout_res.support,
+                        level_type=breakout_res.level_type,
+                        breakout_direction="BULLISH" if breakout_res.breakout_type == "BULLISH_BREAKOUT" else ("BEARISH" if breakout_res.breakout_type == "BEARISH_BREAKOUT" else "NONE"),
+                        breakout_category=breakout_res.breakout_category,
+                        atr=breakout_res.atr,
+                        spread=breakout_res.spread,
+                        momentum=breakout_res.momentum_state,
+                        volatility=breakout_res.volatility_state,
+                        retest=breakout_res.retest_state,
+                        rr=breakout_res.rr_string,
+                        rr_ratio=breakout_res.rr_ratio,
+                        score=breakout_res.total_score,
+                        score_breakdown={
+                            "level_quality": breakout_res.score_level_quality,
+                            "breakout_strength": breakout_res.score_breakout_strength,
+                            "momentum": breakout_res.score_momentum,
+                            "volatility": breakout_res.score_volatility,
+                            "retest": breakout_res.score_retest,
+                            "session": breakout_res.score_session,
+                            "spread": breakout_res.score_spread,
+                            "profit_potential": breakout_res.score_profit_potential,
+                        },
+                        signal=breakout_res.signal,
+                        entry=breakout_res.entry,
+                        sl=breakout_res.stop_loss,
+                        tp=breakout_res.take_profit,
+                        expected_move=breakout_res.expected_move_dollars,
+                        reasons=breakout_res.reasons_for_no_trade,
+                        result="PENDING" if breakout_res.signal in ("BUY", "SELL") else "NO_TRADE_OBSERVED",
+                    )
+                    setup_logger.log_setup(setup_rec)
+                except Exception as ex_log:
+                    logger.debug("Setup logger exception: %s", ex_log)
 
                 # If high quality breakout setup fires, promote to actionable signal
                 if breakout_res.signal in ("BUY", "SELL") and breakout_res.total_score >= 75:
@@ -438,7 +588,7 @@ class RealSignalAnalyzer:
                         "should_notify": (breakout_res.total_score >= 85 and is_market_open),
                         "evidence": [
                             f"Score: {breakout_res.total_score}/100 ({breakout_res.status_label})",
-                            f"Breakout: {breakout_res.breakout_type}",
+                            f"Breakout: {breakout_res.breakout_type} ({breakout_res.breakout_category})",
                             f"Resistance: {breakout_res.resistance} | Support: {breakout_res.support}",
                             f"Risk/Reward: {breakout_res.rr_string}",
                             f"Retest: {breakout_res.retest_state}",
@@ -448,13 +598,21 @@ class RealSignalAnalyzer:
                         highest_status = "FIRE"
                     elif highest_status != "FIRE":
                         highest_status = "ARMED"
+                elif self.symbol == "XAUUSD" and breakout_res.signal == "NO_TRADE":
+                    highest_status = breakout_res.status_label
+                    system_reason_xau = breakout_res.no_trade_summary or "NO TRADE | Menunggu setup breakout valid"
 
             except Exception as ex:
                 logger.error("Error running XAUUSDBreakoutEngine: %s", ex, exc_info=True)
 
+        system_reason = (
+            system_reason_xau if (self.symbol == "XAUUSD" and not actionable_signals and "system_reason_xau" in locals())
+            else ("Sniper waiting for strict confluence & momentum" if not actionable_signals else f"{len(actionable_signals)} verified setups active (1:3+ RR)")
+        )
+
         return {
             "status": highest_status,
-            "reason": "Sniper waiting for strict confluence & momentum" if not actionable_signals else f"{len(actionable_signals)} verified setups active (1:3+ RR)",
+            "reason": system_reason,
             "signals": actionable_signals,
             "smc": smc_data,
             "xauusd_breakout": xauusd_data,
