@@ -17,6 +17,21 @@ from core.execution.connector import (
     MT5ReadOnlyConnector,
 )
 from core.execution.mt5_probe import MT5ConnectivityProbe
+from core.execution.remote_protocol import (
+    CURRENT_PROTOCOL_VERSION,
+    HealthInfo,
+    NodeAction,
+    NodeFailureState,
+    NodeIdentity,
+    NodeRequest,
+    NodeResponse,
+    PositionReadOnly,
+    generate_request_id,
+)
+from core.execution.transport import ISecureTransport, LocalMockTransport
+from core.execution.remote_node import IRemoteExecutionNode, MockExecutionNode
+from core.execution.client import RemoteExecutionClient, RemoteExecutionError
+from core.execution.service import ExecutionService
 
 __all__ = [
     "AccountInfoReadOnly",
@@ -31,4 +46,20 @@ __all__ = [
     "MockMT5Connector",
     "MT5ReadOnlyConnector",
     "MT5ConnectivityProbe",
+    "CURRENT_PROTOCOL_VERSION",
+    "HealthInfo",
+    "NodeAction",
+    "NodeFailureState",
+    "NodeIdentity",
+    "NodeRequest",
+    "NodeResponse",
+    "PositionReadOnly",
+    "generate_request_id",
+    "ISecureTransport",
+    "LocalMockTransport",
+    "IRemoteExecutionNode",
+    "MockExecutionNode",
+    "RemoteExecutionClient",
+    "RemoteExecutionError",
+    "ExecutionService",
 ]
