@@ -10,9 +10,9 @@ psycopg[binary]>=3.1.18
 pytest>=8.0.0
 
 # MT5 Worker
-MetaTrader5==5.0.45
-pyzmq==25.1.2
-psutil==5.9.8
+MetaTrader5>=5.0.45
+pyzmq>=25.1.2
+psutil>=5.9.8
 
 # Web Dashboard & AI Engine
 flask>=3.0.0
