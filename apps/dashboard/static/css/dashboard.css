@@ -158,7 +158,7 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
 
 /* ── Main grid ── */
 .main-grid { display: grid; grid-template-columns: 1fr 380px; gap: 18px; }
-.chart-wrap { overflow: hidden; }
+.chart-wrap { overflow: hidden; min-height: 420px; }
 
 /* ── Signal list ── */
 .sig-list { display: flex; flex-direction: column; max-height: 380px; overflow-y: auto; }

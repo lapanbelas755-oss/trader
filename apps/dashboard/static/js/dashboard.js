@@ -24,11 +24,18 @@ let tickCount     = 0;
 // ── Socket.IO Connection ─────────────────────────────────────────────────────
 const socket = io({ transports: ["websocket", "polling"] });
 
+// Queue for candle data arriving before chart is initialized
+let _pendingCandles = null;
+let _chartReady = false;
+
 socket.on("connect", () => {
   setWsStatus(true);
   logEvent("INFO", "WebSocket connected — live multi-symbol feed active");
-  // Request candles for the current symbol on connect
-  socket.emit("request_candles", { symbol: currentSymbol });
+  // request_candles will be emitted AFTER initChart() completes
+  // If chart already ready (reconnect), fetch immediately
+  if (_chartReady) {
+    socket.emit("request_candles", { symbol: currentSymbol });
+  }
 });
 
 socket.on("disconnect", () => {
@@ -80,17 +87,36 @@ socket.on("candle_update", (data) => {
 socket.on("candles_full", (data) => {
   if (!data) return;
   const sym = (data.symbol || "").toUpperCase();
-  if (sym === currentSymbol && candleSeries && Array.isArray(data.candles)) {
-    try {
-      candleSeries.setData(data.candles);
-      if (chart) chart.timeScale().fitContent();
-      if (data.smc) updateSMCOverlays(data.smc);
-      if (data.xauusd_breakout) renderXAUUSDBreakoutTerminal(data.xauusd_breakout);
-    } catch (e) {
-      console.warn("Candle set error:", e);
-    }
+  if (sym !== currentSymbol) return;
+
+  // If chart not ready yet, queue for later
+  if (!candleSeries) {
+    _pendingCandles = data;
+    return;
   }
+
+  _applyCandles(data);
 });
+
+function _applyCandles(data) {
+  if (!data || !candleSeries) return;
+  try {
+    const candles = data.candles || [];
+    if (candles.length > 0) {
+      candleSeries.setData(candles);
+      // fitContent after layout is fully painted
+      requestAnimationFrame(() => {
+        if (chart) {
+          chart.timeScale().fitContent();
+        }
+      });
+    }
+    if (data.smc) updateSMCOverlays(data.smc);
+    if (data.xauusd_breakout) renderXAUUSDBreakoutTerminal(data.xauusd_breakout);
+  } catch (e) {
+    console.warn("Candle set error:", e);
+  }
+}
 
 // ── Signals Update ────────────────────────────────────────────────────────────
 socket.on("signals_update", (data) => {
@@ -207,14 +233,25 @@ function initChart() {
   const el = document.getElementById("chart");
   if (!el || chart) return;
 
+  // Ensure element has a real rendered width
+  const chartWidth = el.offsetWidth || el.clientWidth || 600;
+
   chart = LightweightCharts.createChart(el, {
     layout: { background: { type: "solid", color: "#10142a" }, textColor: "#8892b0" },
     grid: { vertLines: { color: "rgba(255,255,255,0.04)" }, horzLines: { color: "rgba(255,255,255,0.04)" } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: "rgba(255,255,255,0.08)", scaleMargins: { top: 0.08, bottom: 0.15 } },
-    timeScale: { borderColor: "rgba(255,255,255,0.08)", timeVisible: true, secondsVisible: false },
-    width: el.offsetWidth,
+    timeScale: {
+      borderColor: "rgba(255,255,255,0.08)",
+      timeVisible: true,
+      secondsVisible: false,
+      fixLeftEdge: false,
+      fixRightEdge: false,
+    },
+    width: chartWidth,
     height: 340,
+    handleScroll: { mouseWheel: true, pressedMouseMove: true },
+    handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
   });
 
   // 1. Candlestick Series
@@ -243,11 +280,29 @@ function initChart() {
 
   window.addEventListener("resize", () => {
     if (chart && el) {
-      chart.applyOptions({ width: el.offsetWidth });
+      chart.applyOptions({ width: el.offsetWidth || el.clientWidth || 600 });
       resizeSMCCanvas();
       requestAnimationFrame(redrawSMCCanvas);
     }
   });
+
+  // Mark chart as ready
+  _chartReady = true;
+
+  // Apply any queued candle data that arrived before chart was ready
+  if (_pendingCandles) {
+    const pd = _pendingCandles;
+    _pendingCandles = null;
+    _applyCandles(pd);
+  }
+
+  // Now it's safe to request candles from the server
+  if (socket.connected) {
+    socket.emit("request_candles", { symbol: currentSymbol });
+  }
+
+  // Also load via REST as immediate fallback
+  loadCandlesForTimeframe(currentSymbol, currentTimeframe);
 }
 
 function setupSMCCanvas() {
@@ -419,9 +474,19 @@ function loadCandlesForTimeframe(sym, tf) {
   fetch(`/api/candles?symbol=${sym}&timeframe=${tf}`)
     .then(r => r.json())
     .then(d => {
-      if (d && Array.isArray(d.candles) && candleSeries) {
+      if (!d || !Array.isArray(d.candles) || d.candles.length === 0) return;
+      if (!candleSeries) {
+        // Chart not ready yet — queue it
+        _pendingCandles = { symbol: sym, candles: d.candles, smc: null };
+        return;
+      }
+      try {
         candleSeries.setData(d.candles);
-        if (chart) chart.timeScale().fitContent();
+        requestAnimationFrame(() => {
+          if (chart) chart.timeScale().fitContent();
+        });
+      } catch (e) {
+        console.warn("Candle set (REST) error:", e);
       }
     })
     .catch(err => console.warn("Timeframe candles error:", err));
@@ -814,6 +879,7 @@ async function fetchInitialSymbols() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
+  // Chart MUST be initialized first before anything else that triggers candle data
   initChart();
   startClock();
   setupSymbolSwitcher();
