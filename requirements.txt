@@ -1,4 +1,4 @@
-# Trader Machine V1 - Research Foundation Dependencies
+# Trader Machine V1 - Unified VPS Dependencies
 numpy>=1.26.0
 pandas>=2.2.0
 pyarrow>=15.0.0
@@ -8,3 +8,16 @@ python-dotenv>=1.0.1
 sqlalchemy>=2.0.27
 psycopg[binary]>=3.1.18
 pytest>=8.0.0
+
+# MT5 Worker
+MetaTrader5==5.0.45
+pyzmq==25.1.2
+psutil==5.9.8
+
+# Web Dashboard & AI Engine
+flask>=3.0.0
+flask-cors>=4.0.0
+Flask-SocketIO==5.3.6
+eventlet==0.35.2
+python-telegram-bot==21.0.1
+requests>=2.31.0

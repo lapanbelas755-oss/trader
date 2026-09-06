@@ -1,0 +1,4 @@
+MetaTrader5==5.0.45
+pyzmq==25.1.2
+pydantic==2.6.4
+psutil==5.9.8

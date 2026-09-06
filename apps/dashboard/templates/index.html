@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Trader Machine V2 — Real-Time Research Dashboard</title>
+  <meta name="description" content="Trader Machine V2 — Real-time EURUSD analysis, signal monitoring, and system health dashboard."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link rel="stylesheet" href="/static/css/dashboard.css"/>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow glow-1"></div>
+  <div class="bg-glow glow-2"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+          <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#g1)" stroke-width="1.5" fill="none"/>
+          <path d="M14 7L20 10.5V17.5L14 21L8 17.5V10.5L14 7Z" fill="url(#g1)" opacity="0.35"/>
+          <circle cx="14" cy="14" r="3" fill="url(#g1)"/>
+          <defs>
+            <linearGradient id="g1" x1="2" y1="2" x2="26" y2="26" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00d4ff"/><stop offset="1" stop-color="#7b61ff"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div>
+        <div class="logo-name">TraderMachine</div>
+        <div class="logo-ver">V2 · Real-Time</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="dashboard">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="#" class="nav-item" data-page="signals">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+        Signals
+        <span class="nav-badge" id="signal-count-badge">0</span>
+      </a>
+      <a href="#" class="nav-item" data-page="backtest">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Analytics
+      </a>
+      <a href="#" class="nav-item" data-page="system">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        System
+      </a>
+      <a href="#" class="nav-item" data-page="telegram">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Telegram
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="ws-status" id="ws-status">
+        <span class="ws-dot disconnected" id="ws-dot"></span>
+        <span id="ws-label">Connecting…</span>
+      </div>
+      <div class="mode-pill">⚠ RESEARCH ONLY</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="page-title" id="page-title">Dashboard</span>
+        <span class="page-sub" id="page-sub">EURUSD · M5 · WebSocket</span>
+      </div>
+      <div class="topbar-right">
+        <div class="live-price-block" id="live-price-block">
+          <div class="lp-symbol">EUR/USD</div>
+          <div class="lp-bid" id="lp-bid">—</div>
+          <div class="lp-dir" id="lp-dir">—</div>
+          <div class="lp-spread" id="lp-spread">— pips</div>
+          <div class="lp-source" id="lp-source">—</div>
+        </div>
+        <div class="clock" id="clock">—</div>
+      </div>
+    </header>
+
+    <!-- ── PAGE: Dashboard ── -->
+    <div class="page active" id="page-dashboard">
+      <div class="stat-bar">
+        <div class="stat-pill">
+          <div class="sp-label">BID</div>
+          <div class="sp-val mono" id="s-bid">—</div>
+          <div class="sp-tag">OBSERVED</div>
+        </div>
+        <div class="stat-pill">
+          <div class="sp-label">ASK</div>
+          <div class="sp-val mono" id="s-ask">—</div>
+          <div class="sp-tag">OBSERVED</div>
+        </div>
+        <div class="stat-pill">
+          <div class="sp-label">SPREAD</div>
+          <div class="sp-val mono" id="s-spread">—</div>
+          <div class="sp-tag">DERIVED</div>
+        </div>
+        <div class="stat-pill">
+          <div class="sp-label">SIGNALS</div>
+          <div class="sp-val" id="s-sigs">—</div>
+          <div class="sp-tag">ACTIVE</div>
+        </div>
+        <div class="stat-pill">
+          <div class="sp-label">SOURCE</div>
+          <div class="sp-val" id="s-source" style="font-size:12px;">—</div>
+          <div class="sp-tag">DATA FEED</div>
+        </div>
+        <div class="stat-pill">
+          <div class="sp-label">TICKS</div>
+          <div class="sp-val mono" id="s-ticks">0</div>
+          <div class="sp-tag">RECEIVED</div>
+        </div>
+      </div>
+
+      <div class="main-grid">
+        <!-- Chart -->
+        <div class="card chart-wrap">
+          <div class="card-hdr">
+            <div class="card-title">
+              <span class="live-dot"></span>
+              EUR/USD — M5 Live Chart
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span class="chip chip-sim" id="data-source-chip">SIMULATED</span>
+              <span class="chip chip-rt">LIVE</span>
+            </div>
+          </div>
+          <div id="chart" style="height:340px;"></div>
+        </div>
+
+        <!-- Signals -->
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">
+              <span class="live-dot"></span>
+              Active Signals
+            </div>
+            <span id="sig-timestamp" style="font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;"></span>
+          </div>
+          <div id="signals-mini" class="sig-list">
+            <div class="empty">Waiting for signals…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom-grid">
+        <!-- Event log -->
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">
+              <span class="live-dot"></span>
+              Live Event Log
+            </div>
+          </div>
+          <div id="event-log" class="ev-list"></div>
+        </div>
+
+        <!-- Health mini -->
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">System Health</div></div>
+          <div id="health-mini" class="health-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: Signals ── -->
+    <div class="page" id="page-signals">
+      <div class="card" style="padding:0;">
+        <div class="card-hdr">
+          <div class="card-title"><span class="live-dot"></span> Live Signal Monitor</div>
+          <span style="font-size:11px;color:var(--muted);">Updates automatically via WebSocket</span>
+        </div>
+        <div id="signals-full" class="sig-full-list"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: Analytics ── -->
+    <div class="page" id="page-backtest">
+      <div class="card" style="padding:28px;">
+        <div class="card-hdr" style="border:none;padding:0 0 20px 0;">
+          <div class="card-title">Backtest Statistics</div>
+          <span class="chip chip-sim">SIMULATED DATA</span>
+        </div>
+        <div id="bt-grid" class="bt-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: System ── -->
+    <div class="page" id="page-system">
+      <div class="card" style="padding:28px;">
+        <div class="card-hdr" style="border:none;padding:0 0 20px 0;">
+          <div class="card-title">System Status</div>
+          <span id="sys-uptime" style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;"></span>
+        </div>
+        <div id="sys-grid" class="sys-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: Telegram ── -->
+    <div class="page" id="page-telegram">
+      <div class="card" style="padding:28px;max-width:600px;">
+        <div class="card-hdr" style="border:none;padding:0 0 24px 0;">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Telegram Bot
+          </div>
+        </div>
+        <div id="tg-status-block" style="margin-bottom:24px;"></div>
+        <button id="btn-tg-test" class="btn-primary">
+          📨 Send Test Message
+        </button>
+        <div id="tg-test-result" style="margin-top:16px;font-size:13px;"></div>
+        <div style="margin-top:32px;padding:16px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border);">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:12px;letter-spacing:0.5px;">CONFIGURATION</div>
+          <div style="font-size:12px;color:var(--text-sec);line-height:2;">
+            Add to your <code style="background:rgba(0,212,255,0.1);padding:1px 6px;border-radius:3px;">.env</code> file:<br/>
+            <code style="font-family:'JetBrains Mono',monospace;color:var(--cyan);">TELEGRAM_BOT_TOKEN=your_token_here</code><br/>
+            <code style="font-family:'JetBrains Mono',monospace;color:var(--cyan);">TELEGRAM_CHAT_ID=your_chat_id_here</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
