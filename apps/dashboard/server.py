@@ -318,10 +318,24 @@ def api_symbols():
 
 @app.route("/api/candles")
 def api_candles():
-    symbol   = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()
-    sym_feed = price_feed.get_feed(symbol)
-    candles  = sym_feed.get_candles() if sym_feed else []
-    return jsonify({"candles": candles, "symbol": symbol, "timeframe": "M5"})
+    symbol    = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()
+    timeframe = request.args.get("timeframe", "M5").upper()
+    valid_tfs = ("M1", "M5", "M15", "H1", "H4", "D1")
+    if timeframe not in valid_tfs:
+        timeframe = "M5"
+
+    if timeframe == "M5":
+        sym_feed = price_feed.get_feed(symbol)
+        candles  = sym_feed.get_candles() if sym_feed else []
+    else:
+        from apps.dashboard.price_feed import fetch_mt5_worker_bars
+        candles = fetch_mt5_worker_bars(symbol, timeframe, count=80)
+        if not candles:
+            # Fallback to M5 feed if higher/lower TF not reachable
+            sym_feed = price_feed.get_feed(symbol)
+            candles = sym_feed.get_candles() if sym_feed else []
+
+    return jsonify({"candles": candles, "symbol": symbol, "timeframe": timeframe})
 
 
 @app.route("/api/health")

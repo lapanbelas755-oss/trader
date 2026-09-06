@@ -690,5 +690,84 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
   border-color: rgba(255, 202, 40, 0.25) !important;
 }
 
+/* Timeframe Switcher (M1, M5, M15, H1, H4) */
+.tf-btn-group {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.tf-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tf-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.tf-btn.active {
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.2);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  font-weight: 800;
+}
+
+/* Multi-Timeframe Confluence Strip on Chart */
+.chart-mtf-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 6px;
+  margin: 6px 14px 10px 14px;
+}
+.mtf-strip-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #ffd700;
+  margin-right: 4px;
+}
+.mtf-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+}
+.tag-tf {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 9.5px;
+}
+.tag-val {
+  font-weight: 800;
+}
+.mtf-badge-strip {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
 
 

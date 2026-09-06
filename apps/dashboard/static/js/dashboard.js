@@ -16,6 +16,7 @@ const SYMBOL_CONFIG = {
 };
 
 let currentSymbol = "XAUUSD";
+let currentTimeframe = "M5";
 let btSymbol      = "XAUUSD";
 let prevBid       = null;
 let tickCount     = 0;
@@ -374,15 +375,15 @@ function setSymbol(sym) {
 
   // Update headers
   const subEl = document.getElementById("page-sub");
-  if (subEl) subEl.textContent = `${sym} · M5 · WebSocket`;
+  if (subEl) subEl.textContent = `${sym} · ${currentTimeframe} · WebSocket`;
 
   const chartTitleEl = document.getElementById("chart-title");
-  if (chartTitleEl) chartTitleEl.textContent = `${cfg.display} — M5 Live Chart`;
+  if (chartTitleEl) chartTitleEl.textContent = `${cfg.display} — ${currentTimeframe} Live Chart`;
 
   const lpSymEl = document.getElementById("lp-symbol");
   if (lpSymEl) lpSymEl.textContent = cfg.display;
 
-  logEvent("INFO", `Switched chart view to ${cfg.display}`);
+  logEvent("INFO", `Switched chart view to ${cfg.display} (${currentTimeframe})`);
 
   // Fetch current price & candles immediately
   fetch(`/api/price?symbol=${sym}`)
@@ -410,8 +411,52 @@ function setSymbol(sym) {
     fetchXAUUSDBreakout();
   }
 
-  // Request fresh candles via WebSocket
-  socket.emit("request_candles", { symbol: sym });
+  // Load candles for active timeframe
+  loadCandlesForTimeframe(sym, currentTimeframe);
+}
+
+function loadCandlesForTimeframe(sym, tf) {
+  fetch(`/api/candles?symbol=${sym}&timeframe=${tf}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d && Array.isArray(d.candles) && candleSeries) {
+        candleSeries.setData(d.candles);
+        if (chart) chart.timeScale().fitContent();
+      }
+    })
+    .catch(err => console.warn("Timeframe candles error:", err));
+}
+
+function setTimeframe(tf) {
+  if (!tf) return;
+  tf = tf.toUpperCase();
+  currentTimeframe = tf;
+
+  // Update button active state
+  document.querySelectorAll("#tf-btn-group .tf-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tf === tf);
+  });
+
+  const cfg = SYMBOL_CONFIG[currentSymbol] || { display: currentSymbol };
+  const chartTitleEl = document.getElementById("chart-title");
+  if (chartTitleEl) chartTitleEl.textContent = `${cfg.display} — ${tf} Live Chart`;
+
+  const subEl = document.getElementById("page-sub");
+  if (subEl) subEl.textContent = `${currentSymbol} · ${tf} · WebSocket`;
+
+  logEvent("INFO", `Switched chart timeframe to ${tf}`);
+  loadCandlesForTimeframe(currentSymbol, tf);
+}
+
+function setupTimeframeSwitcher() {
+  document.querySelectorAll("#tf-btn-group .tf-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tf = btn.dataset.tf;
+      if (tf && tf !== currentTimeframe) {
+        setTimeframe(tf);
+      }
+    });
+  });
 }
 
 function setupSymbolSwitcher() {
@@ -772,6 +817,7 @@ function init() {
   initChart();
   startClock();
   setupSymbolSwitcher();
+  setupTimeframeSwitcher();
   setupTelegramBtn();
   loadHealth();
   loadBacktest(btSymbol);
@@ -980,6 +1026,39 @@ function renderXAUUSDBreakoutTerminal(d) {
     setMtfCell("M15", "mtf-cell-m15", "mtf-val-m15", "CONTEXT");
     setMtfCell("M5", "mtf-cell-m5", "mtf-val-m5", "TRIGGER");
     setMtfCell("M1", "mtf-cell-m1", "mtf-val-m1", "RETEST");
+
+    // Also update the Chart MTF Strip directly above chart
+    const setStripTag = (tf, valId, fallback) => {
+      const el = document.getElementById(valId);
+      if (!el) return;
+      const tfData = mtf.timeframes ? mtf.timeframes[tf] : null;
+      if (tfData) {
+        el.textContent = tfData.trend;
+        el.style.color = tfData.trend === "BULLISH" ? "#00e676" : (tfData.trend === "BEARISH" ? "#ff5252" : "#ffca28");
+      } else {
+        el.textContent = fallback;
+        el.style.color = "var(--muted)";
+      }
+    };
+    setStripTag("H4", "tag-val-h4", "MACRO");
+    setStripTag("H1", "tag-val-h1", "LEVEL");
+    setStripTag("M15", "tag-val-m15", "CONTEXT");
+    setStripTag("M5", "tag-val-m5", "TRIGGER");
+    setStripTag("M1", "tag-val-m1", "RETEST");
+
+    const stripStatus = document.getElementById("tag-status");
+    if (stripStatus) {
+      if (mtf.confluence_passed) {
+        stripStatus.textContent = "CONFLUENCE PASS";
+        stripStatus.className = "mtf-badge-strip badge-pass";
+      } else if (mtf.veto_reasons && mtf.veto_reasons.length > 0) {
+        stripStatus.textContent = "BARRIER BLOCKED";
+        stripStatus.className = "mtf-badge-strip badge-blocked";
+      } else {
+        stripStatus.textContent = "EVALUATING";
+        stripStatus.className = "mtf-badge-strip badge-pending";
+      }
+    }
   }
 
   // 6. Decision Block & Reasons for NO_TRADE (Section L)

@@ -161,10 +161,20 @@
               <span class="live-dot"></span>
               <span id="chart-title">XAU/USD (Gold) — M5 Live Chart</span>
             </div>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <span class="chip chip-smc" id="smc-chip">SMC ACTIVE</span>
-              <span class="chip chip-sim" id="data-source-chip">SIMULATED</span>
-              <span class="chip chip-rt">LIVE</span>
+            <div class="chart-controls" style="display:flex;gap:10px;align-items:center;">
+              <!-- Timeframe Switcher (M1, M5, M15, H1, H4) -->
+              <div class="tf-btn-group" id="tf-btn-group">
+                <button class="tf-btn" data-tf="M1">M1</button>
+                <button class="tf-btn active" data-tf="M5">M5</button>
+                <button class="tf-btn" data-tf="M15">M15</button>
+                <button class="tf-btn" data-tf="H1">H1</button>
+                <button class="tf-btn" data-tf="H4">H4</button>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span class="chip chip-smc" id="smc-chip">SMC ACTIVE</span>
+                <span class="chip chip-sim" id="data-source-chip">SIMULATED</span>
+                <span class="chip chip-rt">LIVE</span>
+              </div>
             </div>
           </div>
           <!-- SMC Legend Bar -->
@@ -175,6 +185,16 @@
             <span class="smc-legend-item"><span class="smc-dot dot-bu-ob"></span> Bu-OB</span>
             <span class="smc-legend-item"><span class="smc-dot dot-be-ob"></span> Be-OB</span>
             <span class="smc-legend-item"><span class="smc-dot dot-bu-bb"></span> Bu-BB</span>
+          </div>
+          <!-- Multi-Timeframe Confluence Strip (Directly on Chart) -->
+          <div class="chart-mtf-strip" id="chart-mtf-strip">
+            <span class="mtf-strip-lbl">MULTI-TF CONFLUENCE:</span>
+            <span class="mtf-tag" id="tag-h4"><span class="tag-tf">H4</span> <span class="tag-val" id="tag-val-h4">MACRO</span></span>
+            <span class="mtf-tag" id="tag-h1"><span class="tag-tf">H1</span> <span class="tag-val" id="tag-val-h1">LEVEL</span></span>
+            <span class="mtf-tag" id="tag-m15"><span class="tag-tf">M15</span> <span class="tag-val" id="tag-val-m15">CONTEXT</span></span>
+            <span class="mtf-tag" id="tag-m5"><span class="tag-tf">M5</span> <span class="tag-val" id="tag-val-m5">TRIGGER</span></span>
+            <span class="mtf-tag" id="tag-m1"><span class="tag-tf">M1</span> <span class="tag-val" id="tag-val-m1">RETEST</span></span>
+            <span class="mtf-badge-strip badge-blocked" id="tag-status">5-TF GATE</span>
           </div>
           <div class="chart-container-relative" style="position:relative;height:340px;width:100%;">
             <div id="chart" style="height:340px;width:100%;"></div>
@@ -255,7 +275,20 @@
                 </div>
               </div>
 
-              <div class="xau-term-divider heavy"></div>
+              <!-- Multi-Timeframe Confluence Matrix (H4 -> H1 -> M15 -> M5 -> M1) -->
+              <div class="xau-mtf-matrix" id="xau-mtf-matrix">
+                <div class="xau-mtf-hdr">
+                  <span>MULTI-TF CONFLUENCE</span>
+                  <span class="xau-mtf-badge badge-pending" id="xau-mtf-badge">5-TF GATE</span>
+                </div>
+                <div class="xau-mtf-grid">
+                  <div class="mtf-cell" id="mtf-cell-h4"><span class="mtf-tf">H4</span><span class="mtf-val" id="mtf-val-h4">MACRO</span></div>
+                  <div class="mtf-cell" id="mtf-cell-h1"><span class="mtf-tf">H1</span><span class="mtf-val" id="mtf-val-h1">LEVEL</span></div>
+                  <div class="mtf-cell" id="mtf-cell-m15"><span class="mtf-tf">M15</span><span class="mtf-val" id="mtf-val-m15">CONTEXT</span></div>
+                  <div class="mtf-cell" id="mtf-cell-m5"><span class="mtf-tf">M5</span><span class="mtf-val" id="mtf-val-m5">TRIGGER</span></div>
+                  <div class="mtf-cell" id="mtf-cell-m1"><span class="mtf-tf">M1</span><span class="mtf-val" id="mtf-val-m1">RETEST</span></div>
+                </div>
+              </div>
 
               <!-- Score Banner -->
               <div class="xau-score-box" id="xau-score-box">
@@ -276,21 +309,6 @@
                 <div class="sb-item"><span class="sb-lbl">SES</span><span class="sb-val mono" id="sb-ses">0/5</span></div>
                 <div class="sb-item"><span class="sb-lbl">SPR</span><span class="sb-val mono" id="sb-spr">0/5</span></div>
                 <div class="sb-item"><span class="sb-lbl">RR</span><span class="sb-val mono" id="sb-rr">0/10</span></div>
-              </div>
-
-              <!-- Multi-Timeframe Confluence Matrix (H4 -> H1 -> M15 -> M5 -> M1) -->
-              <div class="xau-mtf-matrix" id="xau-mtf-matrix">
-                <div class="xau-mtf-hdr">
-                  <span>MULTI-TF CONFLUENCE</span>
-                  <span class="xau-mtf-badge badge-pending" id="xau-mtf-badge">5-TF GATE</span>
-                </div>
-                <div class="xau-mtf-grid">
-                  <div class="mtf-cell" id="mtf-cell-h4"><span class="mtf-tf">H4</span><span class="mtf-val" id="mtf-val-h4">MACRO</span></div>
-                  <div class="mtf-cell" id="mtf-cell-h1"><span class="mtf-tf">H1</span><span class="mtf-val" id="mtf-val-h1">LEVEL</span></div>
-                  <div class="mtf-cell" id="mtf-cell-m15"><span class="mtf-tf">M15</span><span class="mtf-val" id="mtf-val-m15">CONTEXT</span></div>
-                  <div class="mtf-cell" id="mtf-cell-m5"><span class="mtf-tf">M5</span><span class="mtf-val" id="mtf-val-m5">TRIGGER</span></div>
-                  <div class="mtf-cell" id="mtf-cell-m1"><span class="mtf-tf">M1</span><span class="mtf-val" id="mtf-val-m1">RETEST</span></div>
-                </div>
               </div>
 
               <!-- Decision Block -->
