@@ -472,10 +472,29 @@ class RealSignalAnalyzer:
         xauusd_data = None
         if self.xauusd_engine and candles:
             try:
+                # Fetch higher/lower timeframe bars from MT5 worker if connected
+                m1_bars = None
+                m15_bars = None
+                h1_bars = None
+                h4_bars = None
+                if self.symbol == "XAUUSD":
+                    try:
+                        from apps.dashboard.price_feed import fetch_mt5_worker_bars
+                        h4_bars = fetch_mt5_worker_bars("XAUUSD", "H4", count=25)
+                        h1_bars = fetch_mt5_worker_bars("XAUUSD", "H1", count=25)
+                        m15_bars = fetch_mt5_worker_bars("XAUUSD", "M15", count=25)
+                        m1_bars = fetch_mt5_worker_bars("XAUUSD", "M1", count=25)
+                    except Exception as ex:
+                        logger.debug("Multi-TF bars fetch notice: %s", ex)
+
                 breakout_res = self.xauusd_engine.evaluate(
                     candles,
                     current_spread=current_spread,
                     is_market_open=is_market_open,
+                    m1_candles=m1_bars,
+                    m15_candles=m15_bars,
+                    h1_candles=h1_bars,
+                    h4_candles=h4_bars,
                 )
                 xauusd_data = {
                     "symbol": breakout_res.symbol,
@@ -522,6 +541,8 @@ class RealSignalAnalyzer:
                     "reasons_for_no_trade": breakout_res.reasons_for_no_trade,
                     "no_trade_summary": breakout_res.no_trade_summary,
                     "evidence_checklist": breakout_res.evidence_checklist,
+                    "multitf_confluence": breakout_res.multitf_confluence,
+                    "multitf_passed": breakout_res.multitf_passed,
                 }
 
                 # Section M: Log setup (both Actionable Signals and NO_TRADE events)

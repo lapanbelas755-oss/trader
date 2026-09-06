@@ -26,6 +26,8 @@ from core.structure.contract import ConfirmedSwing, SwingType
 
 logger = logging.getLogger(__name__)
 
+from core.strategies.xauusd_multitf import XAUUSDMultiTFConfluenceEngine, MultiTFConfluenceResult
+
 
 @dataclass
 class XAUUSDConfig:
@@ -106,6 +108,8 @@ class XAUUSDBreakoutResult:
     reasons_for_no_trade: List[str] = field(default_factory=list)
     no_trade_summary: str = ""
     evidence_checklist: List[Dict[str, Any]] = field(default_factory=list)
+    multitf_confluence: Optional[Dict[str, Any]] = None
+    multitf_passed: bool = False
 
 
 class XAUUSDBreakoutEngine:
@@ -136,6 +140,7 @@ class XAUUSDBreakoutEngine:
         self.minimum_rr = self.cfg.minimum_rr
         self.preferred_rr = self.cfg.preferred_rr
         self.max_spread = self.cfg.max_spread
+        self.multitf_engine = XAUUSDMultiTFConfluenceEngine()
 
     def _ensure_candle(self, c: Any) -> Optional[AggregatedCandle]:
         """Ensures candle is an AggregatedCandle, converting from dict if necessary."""
@@ -925,6 +930,10 @@ class XAUUSDBreakoutEngine:
         current_spread: float = 0.20,
         is_market_open: bool = True,
         is_news_restricted: bool = False,
+        m1_candles: Any = None,
+        m15_candles: Any = None,
+        h1_candles: Any = None,
+        h4_candles: Any = None,
     ) -> XAUUSDBreakoutResult:
         """
         Executes full evaluation pipeline (Sections A through J).
@@ -1071,7 +1080,27 @@ class XAUUSDBreakoutEngine:
             {"name": "Risk : Reward", "status": result.rr_string, "ok": result.profit_potential_valid},
         ]
 
-        # 10. Mandatory Conditions & NO_TRADE Reason Aggregator (Section J)
+        # 10. Multi-Timeframe Confluence Evaluation (H4 -> H1 -> M15 -> M5 -> M1)
+        curr_price = float(eval_candle.close)
+        dir_str = "BULLISH" if result.breakout_type == "BULLISH_BREAKOUT" else ("BEARISH" if result.breakout_type == "BEARISH_BREAKOUT" else "NONE")
+        mtf_eval = self.multitf_engine.evaluate(
+            current_price=curr_price,
+            breakout_direction=dir_str,
+            m1_candles=m1_candles,
+            m5_candles=candles,
+            m15_candles=m15_candles,
+            h1_candles=h1_candles,
+            h4_candles=h4_candles,
+        )
+        result.multitf_confluence = mtf_eval.to_dict()
+        result.multitf_passed = mtf_eval.confluence_passed
+
+        # Append Multi-TF checklist evidence
+        result.evidence_checklist.append({"name": "H4 Macro Barrier", "status": "CLEAR" if mtf_eval.h4_barrier_clear else "BLOCKED", "ok": mtf_eval.h4_barrier_clear})
+        result.evidence_checklist.append({"name": "M15 Structure", "status": mtf_eval.m15.structure, "ok": mtf_eval.m15_structure_confirmed})
+        result.evidence_checklist.append({"name": "M1 Micro Retest", "status": "CONFIRMED" if mtf_eval.m1_retest_confirmed else "WAITING", "ok": mtf_eval.m1_retest_confirmed})
+
+        # Mandatory Hard Firewall Check
         reasons: List[str] = []
         if not is_market_open:
             reasons.append("Market closed (Forex weekend / holiday)")
@@ -1097,7 +1126,10 @@ class XAUUSDBreakoutEngine:
         if result.retest_state == "FAILED":
             reasons.append("Retest gagal (Harga breakdown kembali ke dalam range)")
 
-        # Mandatory Hard Firewall Check
+        # Multi-TF confluence vetoes
+        if result.breakout_valid and not mtf_eval.confluence_passed and mtf_eval.veto_reasons:
+            reasons.extend(mtf_eval.veto_reasons)
+
         if reasons:
             result.signal = "NO_TRADE"
             result.reasons_for_no_trade = reasons

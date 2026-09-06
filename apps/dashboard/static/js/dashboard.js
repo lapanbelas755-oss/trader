@@ -940,6 +940,48 @@ function renderXAUUSDBreakoutTerminal(d) {
   setSb("sb-spr", d.score_spread, 5);
   setSb("sb-rr",  d.score_profit_potential, 10);
 
+  // 5.5 Render Multi-Timeframe Confluence Matrix (H4 -> H1 -> M15 -> M5 -> M1)
+  const mtf = d.multitf_confluence;
+  const mtfBadge = document.getElementById("xau-mtf-badge");
+  if (mtf) {
+    if (mtfBadge) {
+      if (mtf.confluence_passed) {
+        mtfBadge.textContent = "CONFLUENCE PASS";
+        mtfBadge.className = "xau-mtf-badge badge-pass";
+      } else if (mtf.veto_reasons && mtf.veto_reasons.length > 0) {
+        mtfBadge.textContent = "BARRIER BLOCKED";
+        mtfBadge.className = "xau-mtf-badge badge-blocked";
+      } else {
+        mtfBadge.textContent = "EVALUATING";
+        mtfBadge.className = "xau-mtf-badge badge-pending";
+      }
+    }
+
+    const setMtfCell = (tf, cellId, valId, fallback) => {
+      const cell = document.getElementById(cellId);
+      const valEl = document.getElementById(valId);
+      const tfData = mtf.timeframes ? mtf.timeframes[tf] : null;
+      if (!cell || !valEl) return;
+      if (tfData) {
+        valEl.textContent = tfData.trend || fallback;
+        cell.className = "mtf-cell " + (
+          tfData.trend === "BULLISH" ? "mtf-bull" :
+          (tfData.trend === "BEARISH" ? "mtf-bear" : "mtf-neutral")
+        );
+        cell.title = `${tf}: ${tfData.structure} | Res: $${tfData.resistance} | Sup: $${tfData.support}`;
+      } else {
+        valEl.textContent = fallback;
+        cell.className = "mtf-cell";
+      }
+    };
+
+    setMtfCell("H4", "mtf-cell-h4", "mtf-val-h4", "MACRO");
+    setMtfCell("H1", "mtf-cell-h1", "mtf-val-h1", "LEVEL");
+    setMtfCell("M15", "mtf-cell-m15", "mtf-val-m15", "CONTEXT");
+    setMtfCell("M5", "mtf-cell-m5", "mtf-val-m5", "TRIGGER");
+    setMtfCell("M1", "mtf-cell-m1", "mtf-val-m1", "RETEST");
+  }
+
   // 6. Decision Block & Reasons for NO_TRADE (Section L)
   const sigEl = document.getElementById("xau-decision-signal");
   const levelsEl = document.getElementById("xau-decision-levels");

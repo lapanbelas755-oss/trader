@@ -244,6 +244,8 @@ class MT5WorkerV3:
             return self._handle_get_tick(req)
         elif action == "get_positions":
             return self._handle_get_positions(req)
+        elif action in ("get_historical_rates", "get_bars"):
+            return self._handle_get_historical_rates(req)
 
         return WorkerV2Response(
             node_id=self.config.node_id,
@@ -413,6 +415,66 @@ class MT5WorkerV3:
         payload = {
             "count": len(pos_list),
             "positions": pos_list,
+        }
+        return WorkerV2Response(
+            node_id=self.config.node_id,
+            request_id=req.request_id,
+            status=WorkerV2ErrorCode.SUCCESS,
+            data_classification=InformationClassification.OBSERVED,
+            payload=payload,
+        )
+
+    def _handle_get_historical_rates(self, req: SignedNodeRequest) -> WorkerV2Response:
+        symbol = str(req.params.get("symbol", "")).strip().upper()
+        timeframe = str(req.params.get("timeframe", "M5")).strip().upper()
+        try:
+            count = int(req.params.get("count", 80))
+        except (ValueError, TypeError):
+            count = 80
+
+        if not symbol:
+            return WorkerV2Response(
+                node_id=self.config.node_id,
+                request_id=req.request_id,
+                status=WorkerV2ErrorCode.PROTOCOL_ERROR,
+                error_message="Parameter 'symbol' is required.",
+            )
+        if symbol not in self.config.allowed_symbols:
+            return WorkerV2Response(
+                node_id=self.config.node_id,
+                request_id=req.request_id,
+                status=WorkerV2ErrorCode.SYMBOL_UNAVAILABLE,
+                error_message=f"Symbol '{symbol}' is not in allowed symbols: {self.config.allowed_symbols}.",
+            )
+
+        valid_tfs = ("M1", "M5", "M15", "H1", "H4", "D1")
+        if timeframe not in valid_tfs:
+            return WorkerV2Response(
+                node_id=self.config.node_id,
+                request_id=req.request_id,
+                status=WorkerV2ErrorCode.PROTOCOL_ERROR,
+                error_message=f"Unsupported timeframe '{timeframe}'. Allowed: {valid_tfs}.",
+            )
+
+        raw_rates = self.adapter.get_historical_rates(symbol, timeframe, count)
+        formatted = []
+        for r in raw_rates:
+            t = r.get("timestamp")
+            iso_time = t.isoformat() if hasattr(t, "isoformat") else str(t)
+            formatted.append({
+                "time": iso_time,
+                "open": float(r["open"]),
+                "high": float(r["high"]),
+                "low": float(r["low"]),
+                "close": float(r["close"]),
+                "volume": int(r.get("tick_volume", 0)),
+            })
+
+        payload = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "count": len(formatted),
+            "rates": formatted,
         }
         return WorkerV2Response(
             node_id=self.config.node_id,

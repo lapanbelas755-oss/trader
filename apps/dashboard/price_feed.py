@@ -346,6 +346,40 @@ def fetch_mt5_worker_tick(symbol: str) -> Optional[dict]:
     return None
 
 
+def fetch_mt5_worker_bars(symbol: str, timeframe: str = "M5", count: int = 50) -> list[dict]:
+    """Fetch live historical bars from Windows MT5 Worker via HMAC-signed HTTP."""
+    secret = os.getenv("WORKER_HMAC_SECRET", "")
+    host   = os.getenv("MT5_WORKER_HOST", "127.0.0.1")
+    if not secret:
+        return []
+
+    ports = []
+    env_port = os.getenv("MT5_WORKER_PORT")
+    if env_port:
+        ports.append(env_port)
+    if "8080" not in ports:
+        ports.append("8080")
+
+    for p in ports:
+        try:
+            from core.execution.v2_spec import HMACRequestSigner, SignedNodeRequest
+            req = SignedNodeRequest(
+                request_id=f"bars_{symbol}_{timeframe}_{int(time.time()*1000)}",
+                action="get_bars",
+                params={"symbol": symbol, "timeframe": timeframe, "count": count}
+            )
+            signed_req = HMACRequestSigner.sign_request(req, secret)
+            url  = f"http://{host}:{p}/api/v3/request"
+            resp = requests.post(url, json=signed_req.model_dump(mode="json"), timeout=3.5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "SUCCESS" and "payload" in data and data["payload"]:
+                    return data["payload"].get("rates", [])
+        except Exception:
+            continue
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Per-Symbol Feed Manager
 # ---------------------------------------------------------------------------
