@@ -71,6 +71,7 @@ class RealSignalAnalyzer:
             fallback_atr=cfg["fallback_atr"],
         )
         self._sent_signal_ids: set = set()
+        self._cooldowns: dict = {}
 
     def compute_atr(self, candles: List[AggregatedCandle], period: int = 14) -> Decimal:
         """Calculates standard ATR(14) in Decimal."""
@@ -263,12 +264,26 @@ class RealSignalAnalyzer:
                 confidence = min(95, 60 + len(ev_items) * 7) if ev_items else (90 if s.status == SetupStatus.FIRE else 80)
 
                 sig_id = f"SIG-{self.symbol}-{s.setup_code.value}-{int(eval_time.timestamp())}"
-                should_notify_telegram = sig_id not in self._sent_signal_ids
+                
+                # Strict Sniper Cooldown (15 minutes per setup per symbol) & FIRE-only alerts
+                now_ts = time.time()
+                cooldown_key = f"{self.symbol}_{s.setup_code.value}"
+                last_sent = self._cooldowns.get(cooldown_key, 0.0)
+                is_fire = (s.status == SetupStatus.FIRE)
+                can_alert = is_fire and (now_ts - last_sent > 900) and (sig_id not in self._sent_signal_ids)
+
+                should_notify_telegram = can_alert
+                if can_alert:
+                    self._cooldowns[cooldown_key] = now_ts
+                    self._sent_signal_ids.add(sig_id)
+
+                raw_liq = str(s.liquidity_type or "Confirmed Pool").replace("LiquidityLevelType.", "").replace("_", " ").title()
+                raw_struct = str(s.structure_type or "Confirmed Break").replace("BreakType.", "").replace("_", " ").title()
 
                 actionable_signals.append({
                     "id":         sig_id,
                     "symbol":     self.symbol,
-                    "setup":      f"{s.setup_code.value} {s.liquidity_type or 'Reversal'}",
+                    "setup":      f"{s.setup_code.value} — {raw_liq}",
                     "direction":  direction_str,
                     "confidence": confidence,
                     "regime":     s.regime,
@@ -284,8 +299,8 @@ class RealSignalAnalyzer:
                     "evidence": [
                         f"Symbol: {self.symbol}",
                         f"Setup: {s.setup_code.value}",
-                        f"Liquidity Pool: {s.liquidity_type or 'Confirmed Level'}",
-                        f"Structure Displacement: {s.structure_type or 'Confirmed Break'}",
+                        f"Liquidity Pool: {raw_liq}",
+                        f"Structure Displacement: {raw_struct}",
                         f"ATR(14): {round(atr_f, dec)}",
                         f"SL: {sl_pips} pips | TP: {tp_pips} pips (2R)",
                     ],

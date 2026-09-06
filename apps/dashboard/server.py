@@ -104,10 +104,17 @@ def _make_on_tick(symbol: str):
             "metrics": analysis.get("metrics", {}),
         })
 
-        # Send Telegram ONLY for validated high-confidence ARMED/FIRE setups
+        # Send Telegram ONLY for validated high-confidence ARMED/FIRE setups on REAL OBSERVED data
+        feed_source = sym_feed.source if sym_feed else "UNKNOWN"
         for s in actionable_signals:
+            # STRICT SAFETY FIREWALL (AGENTS.MD Law #2, Law #10, Law #20):
+            # Absolutely block Telegram notifications if underlying price feed is SIMULATION!
+            if feed_source == "SIMULATION":
+                logger.debug("🛡️ Telegram alert BLOCKED for %s: Source is SIMULATION (real data required)", s["id"])
+                continue
+
             if s.get("should_notify"):
-                logger.info("⚡ ARMED/FIRE setup verified! Sending Telegram: %s", s["id"])
+                logger.info("⚡ ARMED/FIRE setup verified on REAL market data (%s)! Sending Telegram: %s", feed_source, s["id"])
                 sent = tg.send_signal(s)
                 if sent:
                     analyzer.mark_signal_sent(s["id"])

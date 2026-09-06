@@ -215,7 +215,95 @@ def fetch_twelve_data_single(api_key: str, symbol: str) -> Optional[dict]:
         return _make_tick(symbol, mid - spread / 2, mid + spread / 2, "TWELVE_DATA")
     except Exception as e:
         logger.debug(f"Twelve Data fetch notice ({symbol}): {e}")
-        return None
+YAHOO_SYMBOL_MAP = {
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "USDJPY": "JPY=X",
+    "GBPJPY": "GBPJPY=X",
+}
+
+_HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+
+def fetch_real_public_ticks(symbols: list) -> Dict[str, dict]:
+    """
+    Fetch real observed market prices without API key requirement.
+    Uses Yahoo Finance for Forex majors and Gold API for XAU/USD spot.
+    Returns: {symbol: tick_dict}
+    """
+    results = {}
+
+    # 1. Real spot gold from Gold API
+    if "XAUUSD" in symbols:
+        try:
+            r = requests.get("https://api.gold-api.com/price/XAU", headers=_HTTP_HEADERS, timeout=3.5)
+            if r.status_code == 200:
+                raw_price = float(r.json()["price"])
+                results["XAUUSD"] = _make_tick("XAUUSD", raw_price - 0.15, raw_price + 0.15, "GOLD_API_REAL")
+        except Exception as e:
+            logger.debug(f"Gold API notice: {e}")
+
+    # 2. Real forex rates from Yahoo Finance
+    forex_to_fetch = [s for s in symbols if s in YAHOO_SYMBOL_MAP and s not in results]
+    for sym in forex_to_fetch:
+        ysym = YAHOO_SYMBOL_MAP[sym]
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}?interval=1m&range=1d"
+            r = requests.get(url, headers=_HTTP_HEADERS, timeout=3.5)
+            if r.status_code == 200:
+                meta = r.json()["chart"]["result"][0]["meta"]
+                raw_price = float(meta["regularMarketPrice"])
+                cfg = SYMBOL_CONFIG.get(sym, {})
+                pip_mul = cfg.get("pip_multiplier", 10000)
+                dec = cfg.get("decimals", 5)
+                spread = 1.2 / pip_mul
+                results[sym] = _make_tick(sym, raw_price - spread / 2, raw_price + spread / 2, "YAHOO_REAL")
+        except Exception as e:
+            logger.debug(f"Yahoo real forex notice ({sym}): {e}")
+
+    return results
+
+
+def fetch_real_public_m5_bars(symbol: str, count: int = 80) -> list:
+    """Fetch real historical M5 candles from Yahoo Finance."""
+    ysym = YAHOO_SYMBOL_MAP.get(symbol)
+    if not ysym and symbol == "XAUUSD":
+        ysym = "GC=F"
+    if not ysym:
+        return []
+
+    try:
+        rng = "5d" if symbol == "XAUUSD" else "2d"
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}?interval=5m&range={rng}"
+        r = requests.get(url, headers=_HTTP_HEADERS, timeout=4.0)
+        if r.status_code != 200:
+            return []
+        d = r.json()
+        res = d["chart"]["result"][0]
+        timestamps = res.get("timestamp", [])
+        quotes = res["indicators"]["quote"][0]
+        dec = SYMBOL_CONFIG.get(symbol, {}).get("decimals", 5)
+
+        candles = []
+        for i in range(len(timestamps)):
+            o = quotes["open"][i]
+            h = quotes["high"][i]
+            l = quotes["low"][i]
+            c = quotes["close"][i]
+            v = quotes.get("volume", [1] * len(timestamps))[i] or 1
+            if None in (o, h, l, c):
+                continue
+            candles.append({
+                "time":   int(timestamps[i]),
+                "open":   round(float(o), dec),
+                "high":   round(float(h), dec),
+                "low":    round(float(l), dec),
+                "close":  round(float(c), dec),
+                "volume": int(v),
+            })
+        return candles[-count:] if len(candles) > count else candles
+    except Exception as e:
+        logger.debug(f"Yahoo real M5 fetch notice ({symbol}): {e}")
+        return []
 
 
 def fetch_mt5_worker_tick(symbol: str) -> Optional[dict]:
@@ -372,7 +460,28 @@ class SymbolFeedManager:
             except Exception as e:
                 logger.debug(f"DB candle seed notice ({self.symbol}): {e}")
 
-        # 2. Fallback to smart simulation with proper distinct 5-minute timestamps
+        # 2. Try loading real historical candles from public live market data
+        real_bars = fetch_real_public_m5_bars(self.symbol, count=count)
+        if real_bars:
+            with self._lock:
+                self._candles = real_bars
+                last = self._candles[-1]
+                dec = SYMBOL_CONFIG.get(self.symbol, {}).get("decimals", 5)
+                self._latest = {
+                    "symbol":      self.symbol,
+                    "bid":         last["close"],
+                    "ask":         last["close"],
+                    "mid":         last["close"],
+                    "spread_pips": 1.2,
+                    "timestamp":   datetime.fromtimestamp(last["time"], tz=timezone.utc).isoformat(),
+                    "source":      "YAHOO_REAL" if self.symbol != "XAUUSD" else "GOLD_API_REAL",
+                    "data_type":   "OBSERVED",
+                }
+                self._source = "YAHOO_REAL" if self.symbol != "XAUUSD" else "GOLD_API_REAL"
+            logger.info(f"Loaded {len(self._candles)} real M5 candles for {self.symbol} from live market data")
+            return
+
+        # 3. Last-resort fallback to simulation (only if network is offline)
         now_ts = int(time.time() // 300) * 300
         sim = SmartSimulator(self.symbol)
         with self._lock:
@@ -475,32 +584,43 @@ class PriceFeedManager:
         if not remaining:
             return results
 
-        # 2. TraderMade batch
-        if TRADERMADE_API_KEY:
+        # 2. Real Public Market Data (Yahoo Finance Forex + Spot Gold API)
+        real_ticks = fetch_real_public_ticks(remaining)
+        for sym, tick in real_ticks.items():
+            results[sym] = tick
+            remaining = [s for s in remaining if s != sym]
+        if real_ticks and not mt5_ok:
+            self._source = "REAL_MARKET"
+
+        if not remaining:
+            return results
+
+        # 3. TraderMade batch (fallback)
+        if TRADERMADE_API_KEY and remaining:
             tm = fetch_tradermade_multi(TRADERMADE_API_KEY, remaining)
             for sym, tick in tm.items():
                 results[sym] = tick
                 remaining = [s for s in remaining if s != sym]
-            if tm and not mt5_ok:
+            if tm and not mt5_ok and not real_ticks:
                 self._source = "TRADERMADE"
 
-        # 3. Twelve Data single requests
+        # 4. Twelve Data single requests (fallback)
         if TWELVE_DATA_API_KEY and remaining:
             for sym in list(remaining):
                 tick = fetch_twelve_data_single(TWELVE_DATA_API_KEY, sym)
                 if tick:
                     results[sym] = tick
                     remaining.remove(sym)
-            if not mt5_ok:
+            if not mt5_ok and not real_ticks:
                 self._source = "TWELVE_DATA"
 
-        # 4. Simulation fallback
+        # 5. Last resort simulation (only if network fails completely)
         for sym in remaining:
             feed = self._feeds.get(sym)
             if feed:
                 results[sym] = feed._sim.tick()
 
-        if not mt5_ok and not TRADERMADE_API_KEY and not TWELVE_DATA_API_KEY:
+        if not mt5_ok and not real_ticks and not TRADERMADE_API_KEY and not TWELVE_DATA_API_KEY:
             self._source = "SIMULATION"
 
         return results
