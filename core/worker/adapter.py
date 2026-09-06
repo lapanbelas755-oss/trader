@@ -388,6 +388,12 @@ class RealMT5Adapter(IMT5Adapter):
             return None
         tick = self._mt5.symbol_info_tick(symbol)
         if not tick:
+            for suffix in ["m", ".m", "+", "_i"]:
+                candidate = self._mt5.symbol_info_tick(symbol + suffix)
+                if candidate:
+                    tick = candidate
+                    break
+        if not tick:
             return None
         bid = Decimal(str(getattr(tick, "bid", 0)))
         ask = Decimal(str(getattr(tick, "ask", 0)))
