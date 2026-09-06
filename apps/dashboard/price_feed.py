@@ -420,9 +420,19 @@ class SymbolFeedManager:
         price  = tick["mid"]
 
         with self._lock:
+            # Drop ticks that are older than the last confirmed candle
+            if self._candles and bar_ts < self._candles[-1]["time"]:
+                return
+            
+            # If tick is older than current forming candle, skip it to prevent time travel
+            if self._current_candle and bar_ts < self._current_candle["time"]:
+                return
+
             if self._current_candle is None or self._current_candle["time"] != bar_ts:
                 if self._current_candle is not None:
-                    self._candles.append(dict(self._current_candle))
+                    # Ensure strict chronological order
+                    if not self._candles or self._current_candle["time"] > self._candles[-1]["time"]:
+                        self._candles.append(dict(self._current_candle))
                     if len(self._candles) > 200:
                         self._candles = self._candles[-200:]
                 self._current_candle = {
@@ -554,7 +564,15 @@ class SymbolFeedManager:
             candles = list(self._candles)
             if self._current_candle:
                 candles.append(dict(self._current_candle))
-            return candles
+            
+            # Ensure strictly ascending time to prevent LightweightCharts crash
+            cleaned = []
+            for c in candles:
+                if not cleaned or c["time"] > cleaned[-1]["time"]:
+                    cleaned.append(c)
+                elif c["time"] == cleaned[-1]["time"]:
+                    cleaned[-1] = c
+            return cleaned
 
 
 # ---------------------------------------------------------------------------
