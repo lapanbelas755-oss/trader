@@ -1,19 +1,33 @@
 /**
- * Trader Machine V2 — Real-Time Dashboard JS
- * Uses Socket.IO WebSocket for live data push from server.
+ * Trader Machine V3 — Real-Time Multi-Symbol Dashboard JS
+ * Purely mathematical, zero random/simulated signals.
+ * Full multi-symbol support: EURUSD, XAUUSD, GBPUSD, USDJPY, GBPJPY.
  */
 
 "use strict";
 
+// ── Symbol Configuration ──────────────────────────────────────────────────────
+const SYMBOL_CONFIG = {
+  EURUSD: { display: "EUR/USD",        decimals: 5, pipMul: 10000 },
+  XAUUSD: { display: "XAU/USD (Gold)", decimals: 2, pipMul: 100   },
+  GBPUSD: { display: "GBP/USD",        decimals: 5, pipMul: 10000 },
+  USDJPY: { display: "USD/JPY",        decimals: 3, pipMul: 100   },
+  GBPJPY: { display: "GBP/JPY",        decimals: 3, pipMul: 100   },
+};
+
+let currentSymbol = "EURUSD";
+let btSymbol      = "EURUSD";
+let prevBid       = null;
+let tickCount     = 0;
+
 // ── Socket.IO Connection ─────────────────────────────────────────────────────
 const socket = io({ transports: ["websocket", "polling"] });
 
-let prevBid = null;
-let tickCount = 0;
-
 socket.on("connect", () => {
   setWsStatus(true);
-  logEvent("INFO", "WebSocket connected — live data active");
+  logEvent("INFO", "WebSocket connected — live multi-symbol feed active");
+  // Request candles for the current symbol on connect
+  socket.emit("request_candles", { symbol: currentSymbol });
 });
 
 socket.on("disconnect", () => {
@@ -21,40 +35,85 @@ socket.on("disconnect", () => {
   logEvent("WARN", "WebSocket disconnected — attempting reconnect…");
 });
 
+// ── Multi-Symbol Price Update ─────────────────────────────────────────────────
 socket.on("price_update", (data) => {
-  tickCount++;
-  updatePrice(data);
-  updateStatBar(data);
+  if (!data || !data.symbol) return;
+  const sym = data.symbol.toUpperCase();
+  const cfg = SYMBOL_CONFIG[sym] || { decimals: 5, pipMul: 10000 };
+
+  // 1. Update Watchlist Pill for this symbol
+  const pillPrice = document.getElementById(`pill-price-${sym}`);
+  if (pillPrice && data.bid) {
+    pillPrice.textContent = Number(data.bid).toFixed(cfg.decimals);
+  }
+  const pillTag = document.getElementById(`pill-tag-${sym}`);
+  if (pillTag) {
+    const isReal = data.source && data.source !== "SIMULATION";
+    pillTag.className = "sym-pill-tag " + (isReal ? "tag-real" : "tag-sim");
+    pillTag.textContent = data.source === "POSTGRESQL" ? "DB REAL" : (isReal ? "LIVE" : "SIM");
+  }
+
+  // 2. If this tick is for currently selected symbol, update main display
+  if (sym === currentSymbol) {
+    tickCount++;
+    updatePrice(data, cfg);
+    updateStatBar(data, cfg);
+  }
 });
 
-socket.on("candle_update", (candle) => {
-  if (candleSeries) {
-    candleSeries.update(candle);
+// ── Candle Updates ────────────────────────────────────────────────────────────
+socket.on("candle_update", (data) => {
+  if (!data) return;
+  const sym = (data.symbol || "").toUpperCase();
+  const c   = data.candle || data;
+
+  if (sym === currentSymbol && candleSeries && c && c.time) {
+    try {
+      candleSeries.update(c);
+    } catch (e) {
+      console.debug("Candle update notice:", e);
+    }
   }
 });
 
 socket.on("candles_full", (data) => {
-  if (candleSeries && data.candles && data.candles.length) {
-    candleSeries.setData(data.candles);
-    chart.timeScale().fitContent();
+  if (!data) return;
+  const sym = (data.symbol || "").toUpperCase();
+  if (sym === currentSymbol && candleSeries && Array.isArray(data.candles)) {
+    try {
+      candleSeries.setData(data.candles);
+      if (chart) chart.timeScale().fitContent();
+    } catch (e) {
+      console.warn("Candle set error:", e);
+    }
   }
 });
 
+// ── Signals Update ────────────────────────────────────────────────────────────
 socket.on("signals_update", (data) => {
-  renderSignalsMini(data.signals || []);
-  renderSignalsFull(data.signals || []);
-  const n = data.count || 0;
-  const badge = document.getElementById("signal-count-badge");
-  if (badge) badge.textContent = n;
-  const ssig = document.getElementById("s-sigs");
-  if (ssig) ssig.textContent = n;
-  const ts = document.getElementById("sig-timestamp");
-  if (ts) ts.textContent = new Date().toLocaleTimeString();
-  if (n > 0) {
-    logEvent("SIGNAL", `${n} signal(s) updated`);
+  if (!data) return;
+  const sym = (data.symbol || "").toUpperCase();
+
+  if (sym === currentSymbol) {
+    renderSignalsMini(data.signals || []);
+    renderSignalsFull(data.signals || []);
+
+    const n = data.count || 0;
+    const badge = document.getElementById("signal-count-badge");
+    if (badge) badge.textContent = n;
+    const ssig = document.getElementById("s-sigs");
+    if (ssig) ssig.textContent = n;
+
+    const ts = document.getElementById("sig-timestamp");
+    if (ts) ts.textContent = new Date().toLocaleTimeString();
+
+    if (n > 0) {
+      logEvent("SIGNAL", `${sym}: ${n} verified setup(s) active (${data.status})`);
+    }
   }
 });
 
+// ── Telegram Test Result ──────────────────────────────────────────────────────
 socket.on("telegram_test_result", (data) => {
   const el = document.getElementById("tg-test-result");
   if (el) {
@@ -75,15 +134,21 @@ function setWsStatus(connected) {
 }
 
 // ── Price Display ─────────────────────────────────────────────────────────────
-function updatePrice(d) {
+function updatePrice(d, cfg) {
+  const dec = (cfg && cfg.decimals) || 5;
   const bidEl    = document.getElementById("lp-bid");
   const dirEl    = document.getElementById("lp-dir");
   const spreadEl = document.getElementById("lp-spread");
   const srcEl    = document.getElementById("lp-source");
   const chipEl   = document.getElementById("data-source-chip");
+  const symEl    = document.getElementById("lp-symbol");
 
-  if (bidEl) {
-    const bid = d.bid;
+  if (symEl) {
+    symEl.textContent = (cfg && cfg.display) || d.symbol;
+  }
+
+  if (bidEl && d.bid != null) {
+    const bid = Number(d.bid);
     if (prevBid !== null) {
       const up = bid > prevBid;
       bidEl.classList.remove("up", "down");
@@ -92,27 +157,33 @@ function updatePrice(d) {
       if (dirEl) dirEl.textContent = up ? "▲" : "▼";
       setTimeout(() => bidEl.classList.remove("up", "down"), 600);
     }
-    bidEl.textContent = bid.toFixed(5);
+    bidEl.textContent = bid.toFixed(dec);
     prevBid = bid;
   }
-  if (spreadEl) spreadEl.textContent = d.spread_pips + " pips";
+
+  if (spreadEl) {
+    spreadEl.textContent = (d.spread_pips != null ? d.spread_pips : "—") + " pips";
+  }
+
   if (srcEl) {
     const src = d.source || d.data_type || "—";
     srcEl.textContent = src;
-    srcEl.style.color = src === "SIMULATION" ? "var(--yellow)" : "var(--green)";
+    srcEl.style.color = (src === "SIMULATION") ? "var(--yellow)" : "var(--green)";
   }
+
   if (chipEl) {
     const isReal = d.source && d.source !== "SIMULATION";
-    chipEl.textContent = isReal ? "LIVE DATA" : "SIMULATED";
+    chipEl.textContent = isReal ? (d.source === "POSTGRESQL" ? "POSTGRESQL" : "LIVE DATA") : "SIMULATED";
     chipEl.className = "chip " + (isReal ? "chip-obs" : "chip-sim");
   }
 }
 
-function updateStatBar(d) {
+function updateStatBar(d, cfg) {
+  const dec = (cfg && cfg.decimals) || 5;
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set("s-bid",    d.bid ? d.bid.toFixed(5) : "—");
-  set("s-ask",    d.ask ? d.ask.toFixed(5) : "—");
-  set("s-spread", d.spread_pips ? d.spread_pips + " p" : "—");
+  set("s-bid",    d.bid != null ? Number(d.bid).toFixed(dec) : "—");
+  set("s-ask",    d.ask != null ? Number(d.ask).toFixed(dec) : "—");
+  set("s-spread", d.spread_pips != null ? d.spread_pips + " p" : "—");
   set("s-source", d.source || "—");
   set("s-ticks",  tickCount);
 }
@@ -141,17 +212,71 @@ function initChart() {
     wickUpColor: "#00e676", wickDownColor: "#ff4d6d",
   });
 
-  // Volume as histogram
-  const volSeries = chart.addHistogramSeries({
-    color: "rgba(0,212,255,0.2)",
-    priceFormat: { type: "volume" },
-    priceScaleId: "",
-    scaleMargins: { top: 0.85, bottom: 0 },
-  });
-  window._volSeries = volSeries;
-
   window.addEventListener("resize", () => {
     if (chart && el) chart.applyOptions({ width: el.offsetWidth });
+  });
+}
+
+// ── Symbol Switcher ───────────────────────────────────────────────────────────
+function setSymbol(sym) {
+  if (!sym) return;
+  sym = sym.toUpperCase();
+  currentSymbol = sym;
+  prevBid = null;
+  const cfg = SYMBOL_CONFIG[sym] || { display: sym, decimals: 5, pipMul: 10000 };
+
+  // Update watchlist pill active state
+  document.querySelectorAll("#symbol-bar .sym-pill").forEach(p => {
+    p.classList.toggle("active", p.dataset.symbol === sym);
+  });
+
+  // Update headers
+  const subEl = document.getElementById("page-sub");
+  if (subEl) subEl.textContent = `${sym} · M5 · WebSocket`;
+
+  const chartTitleEl = document.getElementById("chart-title");
+  if (chartTitleEl) chartTitleEl.textContent = `${cfg.display} — M5 Live Chart`;
+
+  const lpSymEl = document.getElementById("lp-symbol");
+  if (lpSymEl) lpSymEl.textContent = cfg.display;
+
+  logEvent("INFO", `Switched chart view to ${cfg.display}`);
+
+  // Fetch current price & candles immediately
+  fetch(`/api/price?symbol=${sym}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.bid) {
+        updatePrice(d, cfg);
+        updateStatBar(d, cfg);
+      }
+    })
+    .catch(() => {});
+
+  // Request fresh candles via WebSocket
+  socket.emit("request_candles", { symbol: sym });
+}
+
+function setupSymbolSwitcher() {
+  document.querySelectorAll("#symbol-bar .sym-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      const sym = pill.dataset.symbol;
+      if (sym && sym !== currentSymbol) {
+        setSymbol(sym);
+      }
+    });
+  });
+
+  // Backtest symbol pills
+  document.querySelectorAll("#bt-symbol-bar .sym-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      const sym = pill.dataset.btsym;
+      if (sym) {
+        document.querySelectorAll("#bt-symbol-bar .sym-pill").forEach(p => p.classList.toggle("active", p.dataset.btsym === sym));
+        btSymbol = sym;
+        loadBacktest(sym);
+      }
+    });
   });
 }
 
@@ -163,15 +288,18 @@ function dirBadgeClass(dir) {
 function renderSignalsMini(signals) {
   const el = document.getElementById("signals-mini");
   if (!el) return;
-  if (!signals.length) { el.innerHTML = `<div class="empty">No active signals — system watching</div>`; return; }
+  if (!signals.length) {
+    el.innerHTML = `<div class="empty">No active signals — Sniper waiting for strict confluence</div>`;
+    return;
+  }
   el.innerHTML = signals.map(s => `
     <div class="sig-item">
       <div class="sig-badge ${dirBadgeClass(s.direction)}">${s.direction}</div>
       <div class="sig-info">
         <div class="sig-name">${s.setup}</div>
         <div class="sig-tags">
+          <span class="stag">${s.symbol}</span>
           <span class="stag">${s.regime}</span>
-          <span class="stag">${s.session}</span>
           <span class="stag">${s.state}</span>
         </div>
         <div class="sig-conf">${s.confidence}%</div>
@@ -183,27 +311,35 @@ function renderSignalsMini(signals) {
 function renderSignalsFull(signals) {
   const el = document.getElementById("signals-full");
   if (!el) return;
-  if (!signals.length) { el.innerHTML = `<div class="empty" style="padding:40px;">No active signals — system is observing market conditions</div>`; return; }
+  if (!signals.length) {
+    el.innerHTML = `<div class="empty" style="padding:40px;">No active signals — Sniper waiting for strict setup confirmation (S01–S05)</div>`;
+    return;
+  }
   el.innerHTML = signals.map(s => {
-    const sl_pips = s.entry && s.sl ? Math.abs(s.entry - s.sl) * 10000 : 0;
-    const tp_pips = s.entry && s.tp ? Math.abs(s.tp - s.entry) * 10000 : 0;
+    const sym = s.symbol || currentSymbol;
+    const cfg = SYMBOL_CONFIG[sym] || { decimals: 5, pipMul: 10000 };
+    const dec = cfg.decimals;
+    const sl_pips = s.sl_pips != null ? s.sl_pips : (s.entry && s.sl ? Math.abs(s.entry - s.sl) * cfg.pipMul : 0);
+    const tp_pips = s.tp_pips != null ? s.tp_pips : (s.entry && s.tp ? Math.abs(s.tp - s.entry) * cfg.pipMul : 0);
+    const evList  = s.evidence || [];
+
     return `
     <div class="sig-full-item">
       <div class="sig-badge ${dirBadgeClass(s.direction)}" style="width:64px;height:64px;font-size:13px;">${s.direction}</div>
       <div>
         <div class="sig-name" style="font-size:14px;margin-bottom:8px;">${s.setup}</div>
         <div class="sig-tags">
+          <span class="stag" style="color:var(--cyan);font-weight:700;">${sym}</span>
           <span class="stag">Regime: ${s.regime}</span>
-          <span class="stag">Session: ${s.session}</span>
           <span class="stag">State: ${s.state}</span>
         </div>
         <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:1.8;">
-          Entry: <span style="color:var(--text)">${s.entry.toFixed(5)}</span> &nbsp;|&nbsp;
-          SL: <span style="color:var(--red)">${s.sl.toFixed(5)}</span> (${sl_pips.toFixed(1)}p) &nbsp;|&nbsp;
-          TP: <span style="color:var(--green)">${s.tp.toFixed(5)}</span> (${tp_pips.toFixed(1)}p)
+          Entry: <span style="color:var(--text)">${Number(s.entry).toFixed(dec)}</span> &nbsp;|&nbsp;
+          SL: <span style="color:var(--red)">${Number(s.sl).toFixed(dec)}</span> (${Number(sl_pips).toFixed(1)}p) &nbsp;|&nbsp;
+          TP: <span style="color:var(--green)">${Number(s.tp).toFixed(dec)}</span> (${Number(tp_pips).toFixed(1)}p)
         </div>
         <div style="margin-top:8px;">
-          ${s.evidence.map(e => `<div style="font-size:11px;color:var(--text-sec);margin-top:3px;">• ${e}</div>`).join("")}
+          ${evList.map(e => `<div style="font-size:11px;color:var(--text-sec);margin-top:3px;">• ${e}</div>`).join("")}
         </div>
       </div>
       <div style="text-align:right;min-width:70px;">
@@ -268,9 +404,10 @@ async function loadHealth() {
     const uptimeEl = document.getElementById("sys-uptime");
     if (uptimeEl) uptimeEl.textContent = `Uptime: ${d.uptime}`;
 
-    // Telegram page
     renderTelegramStatus(d.telegram || {});
-  } catch (e) { console.warn("Health error:", e); }
+  } catch (e) {
+    console.warn("Health fetch error:", e);
+  }
 }
 
 function renderTelegramStatus(info) {
@@ -297,38 +434,58 @@ function renderTelegramStatus(info) {
   }
 }
 
-// ── Backtest ──────────────────────────────────────────────────────────────────
-async function loadBacktest() {
+// ── Backtest & Research Analytics ─────────────────────────────────────────────
+async function loadBacktest(symbol = btSymbol) {
   try {
-    const res = await fetch("/api/backtest");
+    const res = await fetch(`/api/backtest?symbol=${symbol}`);
     const d = await res.json();
+
+    const noteEl = document.getElementById("bt-source-note");
+    const chipEl = document.getElementById("bt-source-chip");
+
+    if (noteEl) {
+      noteEl.textContent = d.data_period
+        ? `Dataset: ${d.data_period} (${d.total_setups || 0} setups)`
+        : (d.note || "Awaiting research run");
+    }
+
+    if (chipEl) {
+      const isReal = d.source === "POSTGRESQL_REAL";
+      chipEl.textContent = isReal ? "POSTGRESQL REAL" : "PLACEHOLDER";
+      chipEl.className = "chip " + (isReal ? "chip-obs" : "chip-sim");
+    }
+
     const el = document.getElementById("bt-grid");
     if (!el) return;
+
     const stats = [
-      { l: "Total Trades",    v: d.total_trades,              u: "trades" },
-      { l: "Win Rate",        v: d.win_rate + "%",            u: "of completed" },
-      { l: "Profit Factor",   v: d.profit_factor,             u: "ratio" },
-      { l: "Expectancy",      v: "+" + d.expectancy_r + "R",  u: "per trade" },
-      { l: "Max Drawdown",    v: d.max_drawdown_pct + "%",    u: "peak–trough" },
-      { l: "Sharpe Ratio",    v: d.sharpe_ratio,              u: "annualized" },
-      { l: "Avg Win",         v: d.avg_win_r + "R",           u: "per winner" },
-      { l: "Max Loss Streak", v: d.consecutive_losses_max,    u: "in a row" },
+      { l: "Total Setups",    v: d.total_setups != null ? d.total_setups : "—",       u: "archetypes detected" },
+      { l: "Bullish Setups",  v: d.bullish_count != null ? d.bullish_count : "—",     u: "S01-S05 long" },
+      { l: "Bearish Setups",  v: d.bearish_count != null ? d.bearish_count : "—",     u: "S01-S05 short" },
+      { l: "Win Rate",        v: d.win_rate != null ? d.win_rate + "%" : "—",         u: "verified trades" },
+      { l: "Profit Factor",   v: d.profit_factor || "—",                             u: "gross profit/loss" },
+      { l: "Expectancy",      v: d.expectancy_r != null ? d.expectancy_r + "R" : "—", u: "per trade" },
+      { l: "Bars Analyzed",   v: d.row_count != null ? d.row_count : "—",             u: `${symbol} M5 bars` },
+      { l: "Data Source",     v: d.source || "—",                                     u: "integrity verified" },
     ];
+
     el.innerHTML = stats.map(s => `
       <div class="bt-card">
         <div class="bt-lbl">${s.l}</div>
         <div class="bt-val">${s.v}</div>
         <div class="bt-unit">${s.u}</div>
       </div>`).join("");
-  } catch (e) { console.warn("Backtest error:", e); }
+  } catch (e) {
+    console.warn("Backtest fetch error:", e);
+  }
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const PAGES = ["dashboard", "signals", "backtest", "system", "telegram"];
 const PAGE_LABELS = {
   dashboard: ["Dashboard",      "EURUSD · M5 · WebSocket"],
-  signals:   ["Live Signals",   "Real-time setup detection"],
-  backtest:  ["Analytics",      "Historical backtest statistics"],
+  signals:   ["Live Signals",   "Real-time S01–S05 setup detection"],
+  backtest:  ["Analytics",      "Historical research & backtest statistics"],
   system:    ["System Health",  "Component status & diagnostics"],
   telegram:  ["Telegram Bot",   "Notification configuration"],
 };
@@ -344,10 +501,10 @@ function showPage(name) {
   const titleEl = document.getElementById("page-title");
   const subEl   = document.getElementById("page-sub");
   if (titleEl) titleEl.textContent = t;
-  if (subEl)   subEl.textContent = s;
+  if (subEl)   subEl.textContent = (name === "dashboard") ? `${currentSymbol} · M5 · WebSocket` : s;
 
   if (name === "system" || name === "telegram") loadHealth();
-  if (name === "backtest") loadBacktest();
+  if (name === "backtest") loadBacktest(btSymbol);
 }
 
 // ── Clock ─────────────────────────────────────────────────────────────────────
@@ -356,23 +513,48 @@ function startClock() {
   const update = () => {
     if (el) {
       const now = new Date();
-      el.textContent = now.toLocaleTimeString("en-GB") + " UTC+" +
-        (-now.getTimezoneOffset() / 60);
+      el.textContent = now.toLocaleTimeString("en-GB") + " UTC+" + (-now.getTimezoneOffset() / 60);
     }
   };
   update();
   setInterval(update, 1000);
 }
 
-// ── Telegram test button ──────────────────────────────────────────────────────
+// ── Telegram Test Button ──────────────────────────────────────────────────────
 function setupTelegramBtn() {
   const btn = document.getElementById("btn-tg-test");
   if (btn) {
     btn.addEventListener("click", () => {
       const el = document.getElementById("tg-test-result");
-      if (el) el.textContent = "Sending…";
+      if (el) el.textContent = "Sending test message…";
       socket.emit("send_test_telegram");
     });
+  }
+}
+
+// ── Initial State Fetch ───────────────────────────────────────────────────────
+async function fetchInitialSymbols() {
+  try {
+    const res = await fetch("/api/symbols");
+    const data = await res.json();
+    if (data && data.feeds) {
+      Object.entries(data.feeds).forEach(([sym, info]) => {
+        const latest = info.latest || {};
+        const cfg = SYMBOL_CONFIG[sym] || { decimals: 5 };
+        const pillPrice = document.getElementById(`pill-price-${sym}`);
+        if (pillPrice && latest.bid != null) {
+          pillPrice.textContent = Number(latest.bid).toFixed(cfg.decimals);
+        }
+        const pillTag = document.getElementById(`pill-tag-${sym}`);
+        if (pillTag) {
+          const isReal = info.source && info.source !== "SIMULATION";
+          pillTag.className = "sym-pill-tag " + (isReal ? "tag-real" : "tag-sim");
+          pillTag.textContent = info.source === "POSTGRESQL" ? "DB REAL" : (isReal ? "LIVE" : "SIM");
+        }
+      });
+    }
+  } catch (e) {
+    console.debug("Initial symbols notice:", e);
   }
 }
 
@@ -380,9 +562,11 @@ function setupTelegramBtn() {
 function init() {
   initChart();
   startClock();
+  setupSymbolSwitcher();
   setupTelegramBtn();
   loadHealth();
-  loadBacktest();
+  loadBacktest(btSymbol);
+  fetchInitialSymbols();
 
   document.querySelectorAll("[data-page]").forEach(nav => {
     nav.addEventListener("click", e => {
@@ -391,11 +575,12 @@ function init() {
     });
   });
 
-  // Periodic health refresh
+  // Periodic refreshes
   setInterval(loadHealth, 30000);
+  setInterval(fetchInitialSymbols, 5000);
 
-  logEvent("INFO", "Trader Machine V2 initialized");
-  logEvent("INFO", "Connecting to WebSocket server…");
+  logEvent("INFO", "Trader Machine V3 multi-symbol dashboard initialized");
+  logEvent("INFO", "Monitoring EURUSD, XAUUSD, GBPUSD, USDJPY, GBPJPY");
 }
 
 document.addEventListener("DOMContentLoaded", init);

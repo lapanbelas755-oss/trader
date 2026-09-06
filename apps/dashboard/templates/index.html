@@ -79,7 +79,7 @@
       </div>
       <div class="topbar-right">
         <div class="live-price-block" id="live-price-block">
-          <div class="lp-symbol">EUR/USD</div>
+          <div class="lp-symbol" id="lp-symbol">EUR/USD</div>
           <div class="lp-bid" id="lp-bid">—</div>
           <div class="lp-dir" id="lp-dir">—</div>
           <div class="lp-spread" id="lp-spread">— pips</div>
@@ -91,6 +91,35 @@
 
     <!-- ── PAGE: Dashboard ── -->
     <div class="page active" id="page-dashboard">
+      <!-- Watchlist / Symbol Switcher -->
+      <div class="symbol-bar" id="symbol-bar">
+        <div class="sym-pill active" data-symbol="EURUSD">
+          <span class="sym-pill-name">EUR/USD</span>
+          <span class="sym-pill-price" id="pill-price-EURUSD">—</span>
+          <span class="sym-pill-tag tag-db" id="pill-tag-EURUSD">DB REAL</span>
+        </div>
+        <div class="sym-pill" data-symbol="XAUUSD">
+          <span class="sym-pill-name">XAU/USD (Gold)</span>
+          <span class="sym-pill-price" id="pill-price-XAUUSD">—</span>
+          <span class="sym-pill-tag tag-sim" id="pill-tag-XAUUSD">SCALP</span>
+        </div>
+        <div class="sym-pill" data-symbol="GBPUSD">
+          <span class="sym-pill-name">GBP/USD</span>
+          <span class="sym-pill-price" id="pill-price-GBPUSD">—</span>
+          <span class="sym-pill-tag tag-sim" id="pill-tag-GBPUSD">SCALP</span>
+        </div>
+        <div class="sym-pill" data-symbol="USDJPY">
+          <span class="sym-pill-name">USD/JPY</span>
+          <span class="sym-pill-price" id="pill-price-USDJPY">—</span>
+          <span class="sym-pill-tag tag-sim" id="pill-tag-USDJPY">ASIA</span>
+        </div>
+        <div class="sym-pill" data-symbol="GBPJPY">
+          <span class="sym-pill-name">GBP/JPY</span>
+          <span class="sym-pill-price" id="pill-price-GBPJPY">—</span>
+          <span class="sym-pill-tag tag-sim" id="pill-tag-GBPJPY">VOLATILE</span>
+        </div>
+      </div>
+
       <div class="stat-bar">
         <div class="stat-pill">
           <div class="sp-label">BID</div>
@@ -130,7 +159,7 @@
           <div class="card-hdr">
             <div class="card-title">
               <span class="live-dot"></span>
-              EUR/USD — M5 Live Chart
+              <span id="chart-title">EUR/USD — M5 Live Chart</span>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
               <span class="chip chip-sim" id="data-source-chip">SIMULATED</span>
@@ -189,9 +218,21 @@
     <!-- ── PAGE: Analytics ── -->
     <div class="page" id="page-backtest">
       <div class="card" style="padding:28px;">
-        <div class="card-hdr" style="border:none;padding:0 0 20px 0;">
-          <div class="card-title">Backtest Statistics</div>
-          <span class="chip chip-sim">SIMULATED DATA</span>
+        <div class="card-hdr" style="border:none;padding:0 0 20px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div class="card-title">Research & Backtest Analytics</div>
+            <div id="bt-source-note" style="font-size:11px;color:var(--muted);margin-top:4px;font-family:'JetBrains Mono',monospace;">Checking database…</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="symbol-bar" id="bt-symbol-bar" style="padding:0;">
+              <div class="sym-pill active" data-btsym="EURUSD" style="padding:5px 10px;font-size:11px;">EURUSD</div>
+              <div class="sym-pill" data-btsym="XAUUSD" style="padding:5px 10px;font-size:11px;">XAUUSD</div>
+              <div class="sym-pill" data-btsym="GBPUSD" style="padding:5px 10px;font-size:11px;">GBPUSD</div>
+              <div class="sym-pill" data-btsym="USDJPY" style="padding:5px 10px;font-size:11px;">USDJPY</div>
+              <div class="sym-pill" data-btsym="GBPJPY" style="padding:5px 10px;font-size:11px;">GBPJPY</div>
+            </div>
+            <span class="chip chip-obs" id="bt-source-chip">POSTGRESQL</span>
+          </div>
         </div>
         <div id="bt-grid" class="bt-grid"></div>
       </div>

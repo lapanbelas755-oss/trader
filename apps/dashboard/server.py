@@ -1,12 +1,12 @@
 """
-Trader Machine — Dashboard API Server V2
-Real-time WebSocket edition using Flask-SocketIO.
+Trader Machine — Dashboard API Server V3
+Real-time WebSocket edition with multi-symbol support.
+All signals are mathematically derived — zero random/simulated outputs.
 """
 
 import os
 import sys
 import time
-import random
 import logging
 import threading
 from datetime import datetime, timezone
@@ -17,13 +17,13 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).parent.parent.parent
 load_dotenv(ROOT / ".env")
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 # Local modules
 sys.path.insert(0, str(ROOT))
-from apps.dashboard.price_feed import feed as price_feed
+from apps.dashboard.price_feed import feed as price_feed, TRACKED_SYMBOLS
 from apps.dashboard import telegram_bot as tg
 from apps.dashboard.analyzer import RealSignalAnalyzer
 
@@ -44,101 +44,80 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
-_START_TIME = time.time()
+_START_TIME       = time.time()
 _connected_clients = 0
-_SIGNAL_HISTORY: list = []   # Keep last 50 signals
-_MAX_HISTORY = 50
+_tick_counts: dict = {sym: 0 for sym in TRACKED_SYMBOLS}
+_last_signal_push: dict = {sym: 0.0 for sym in TRACKED_SYMBOLS}
+_last_signal_push_lock = threading.Lock()
 
-SETUPS   = ["S01 Liquidity Sweep", "S02 Acceptance", "S03 Failed Breakout", "S04 Effort/Result", "S05 Compression"]
-REGIMES  = ["TREND_UP", "TREND_DOWN", "RANGE", "COMPRESSION", "EXPANSION"]
-SESSIONS = ["ASIAN", "LONDON", "NEW_YORK", "OVERLAP"]
-
-
-# ---------------------------------------------------------------------------
-# Signal Generator (rule-based simulation, Phase 2 → real engine)
-# ---------------------------------------------------------------------------
-
-def _generate_signals(price: dict) -> list:
-    signals = []
-    chosen = random.sample(SETUPS, k=random.randint(1, 3))
-    mid = price.get("mid", 1.10250)
-    for i, setup in enumerate(chosen):
-        direction  = random.choice(["BUY", "SELL", "WAIT"])
-        confidence = random.randint(45, 92)
-        sl_dist    = random.uniform(0.0010, 0.0025)
-        tp_dist    = sl_dist * random.uniform(1.5, 3.0)
-        entry      = round(mid + random.uniform(-0.0002, 0.0002), 5)
-        sl         = round(entry - sl_dist if direction == "BUY" else entry + sl_dist, 5)
-        tp         = round(entry + tp_dist if direction == "BUY" else entry - tp_dist, 5)
-        state      = random.choice(["OBSERVE", "WATCH", "ARMED"])
-        signals.append({
-            "id":         f"SIG-{int(time.time())}-{i}",
-            "setup":      setup,
-            "direction":  direction,
-            "confidence": confidence,
-            "regime":     random.choice(REGIMES),
-            "session":    random.choice(SESSIONS),
-            "entry":      entry,
-            "sl":         sl,
-            "tp":         tp,
-            "state":      state,
-            "timestamp":  datetime.now(timezone.utc).isoformat(),
-            "evidence": [
-                "Liquidity level identified",
-                f"ATR z-score: {round(random.uniform(1.8, 3.2), 2)}",
-                f"Structure: {random.choice(['HH-HL', 'LH-LL', 'CHoCH', 'BOS'])}",
-            ],
-        })
-    return signals
+# Per-symbol RealSignalAnalyzer — ZERO random signals, purely mathematical
+_analyzers: dict = {
+    sym: RealSignalAnalyzer(symbol=sym, timeframe="M5")
+    for sym in TRACKED_SYMBOLS
+}
 
 
 # ---------------------------------------------------------------------------
-# Price feed → WebSocket push
+# Per-symbol tick handler
 # ---------------------------------------------------------------------------
 
-_tick_count = 0
-_last_signal_push = 0
-real_analyzer = RealSignalAnalyzer(symbol="EURUSD", timeframe="M5")
+def _make_on_tick(symbol: str):
+    """Factory that returns a tick callback bound to a specific symbol."""
+    analyzer = _analyzers[symbol]
 
-def on_tick(tick: dict):
-    """Called by PriceFeedManager on every new price tick."""
-    global _tick_count, _last_signal_push
-    _tick_count += 1
+    def on_tick(tick: dict):
+        global _tick_counts
+        _tick_counts[symbol] = _tick_counts.get(symbol, 0) + 1
 
-    # Push price to all connected browsers
-    socketio.emit("price_update", tick)
+        # Push price tick to all connected browsers
+        socketio.emit("price_update", tick)
 
-    # Push latest candle (for live chart update)
-    candles = price_feed.get_candles()
-    if candles:
-        socketio.emit("candle_update", candles[-1])
+        # Push latest candle for live chart update
+        sym_feed = price_feed.get_feed(symbol)
+        if sym_feed:
+            candles = sym_feed.get_candles()
+            if candles:
+                socketio.emit("candle_update", {
+                    "symbol": symbol,
+                    "candle": candles[-1],
+                })
 
-    # Run mathematical S01-S05 setup analysis every ~5 seconds
-    now = time.time()
-    if now - _last_signal_push >= 5:
-        _last_signal_push = now
-        analysis = real_analyzer.analyze(candles)
+        # Run S01-S05 analysis every ~5 seconds per symbol
+        now = time.time()
+        with _last_signal_push_lock:
+            last = _last_signal_push.get(symbol, 0.0)
+            if now - last < 5.0:
+                return
+            _last_signal_push[symbol] = now
+
+        candles = sym_feed.get_candles() if sym_feed else []
+        analysis = analyzer.analyze(candles)
         actionable_signals = analysis.get("signals", [])
 
         # Emit current system state to UI
         socketio.emit("signals_update", {
+            "symbol":  symbol,
             "signals": actionable_signals,
-            "count": len(actionable_signals),
-            "status": analysis.get("status", "WAIT"),
-            "reason": analysis.get("reason", "Waiting for confluence"),
+            "count":   len(actionable_signals),
+            "status":  analysis.get("status", "WAIT"),
+            "reason":  analysis.get("reason", "Waiting for confluence"),
             "metrics": analysis.get("metrics", {}),
         })
 
-        # Send Telegram notification ONLY for validated high-confidence setups
+        # Send Telegram ONLY for validated high-confidence ARMED/FIRE setups
         for s in actionable_signals:
             if s.get("should_notify"):
-                logger.info("⚡ ARMED Sniper Setup verified! Sending Telegram alert: %s", s["id"])
+                logger.info("⚡ ARMED/FIRE setup verified! Sending Telegram: %s", s["id"])
                 sent = tg.send_signal(s)
                 if sent:
-                    real_analyzer.mark_signal_sent(s["id"])
+                    analyzer.mark_signal_sent(s["id"])
+
+    return on_tick
 
 
-price_feed.register_callback(on_tick)
+# Register per-symbol callbacks
+for _sym in TRACKED_SYMBOLS:
+    price_feed.register_callback(_sym, _make_on_tick(_sym))
 
 
 # ---------------------------------------------------------------------------
@@ -150,10 +129,16 @@ def on_connect():
     global _connected_clients
     _connected_clients += 1
     logger.info(f"Client connected. Total: {_connected_clients}")
-    # Send current state immediately to new client
+    # Send current state for default symbol immediately
     emit("price_update", price_feed.latest)
-    candles = price_feed.get_candles()
-    emit("candles_full", {"candles": candles, "symbol": "EURUSD", "timeframe": "M5"})
+    default_feed = price_feed.get_feed(TRACKED_SYMBOLS[0])
+    if default_feed:
+        candles = default_feed.get_candles()
+        emit("candles_full", {
+            "candles":   candles,
+            "symbol":    TRACKED_SYMBOLS[0],
+            "timeframe": "M5",
+        })
 
 
 @socketio.on("disconnect")
@@ -164,8 +149,11 @@ def on_disconnect():
 
 
 @socketio.on("request_candles")
-def on_request_candles():
-    emit("candles_full", {"candles": price_feed.get_candles(), "symbol": "EURUSD", "timeframe": "M5"})
+def on_request_candles(data=None):
+    symbol = (data or {}).get("symbol", TRACKED_SYMBOLS[0])
+    sym_feed = price_feed.get_feed(symbol)
+    candles  = sym_feed.get_candles() if sym_feed else []
+    emit("candles_full", {"candles": candles, "symbol": symbol, "timeframe": "M5"})
 
 
 @socketio.on("send_test_telegram")
@@ -175,7 +163,7 @@ def on_test_telegram():
 
 
 # ---------------------------------------------------------------------------
-# REST API (kept for compatibility)
+# REST API
 # ---------------------------------------------------------------------------
 
 @app.route("/")
@@ -185,12 +173,31 @@ def index():
 
 @app.route("/api/price")
 def api_price():
-    return jsonify(price_feed.latest)
+    symbol   = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()
+    sym_feed = price_feed.get_feed(symbol)
+    return jsonify(sym_feed.latest if sym_feed else {})
+
+
+@app.route("/api/symbols")
+def api_symbols():
+    """Return list of all tracked symbols with their latest price."""
+    result = {}
+    for sym in TRACKED_SYMBOLS:
+        f = price_feed.get_feed(sym)
+        if f:
+            result[sym] = {
+                "latest": f.latest,
+                "source": f.source,
+            }
+    return jsonify({"symbols": TRACKED_SYMBOLS, "feeds": result})
 
 
 @app.route("/api/candles")
 def api_candles():
-    return jsonify({"candles": price_feed.get_candles(), "symbol": "EURUSD", "timeframe": "M5"})
+    symbol   = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()
+    sym_feed = price_feed.get_feed(symbol)
+    candles  = sym_feed.get_candles() if sym_feed else []
+    return jsonify({"candles": candles, "symbol": symbol, "timeframe": "M5"})
 
 
 @app.route("/api/health")
@@ -199,32 +206,44 @@ def api_health():
     h, rem = divmod(uptime_secs, 3600)
     m, s   = divmod(rem, 60)
     tg_info = tg.verify()
+    total_ticks = sum(_tick_counts.values())
+
+    # Per-symbol feed status
+    symbol_status = {}
+    for sym in TRACKED_SYMBOLS:
+        f = price_feed.get_feed(sym)
+        symbol_status[sym] = {
+            "source":     f.source if f else "UNKNOWN",
+            "tick_count": _tick_counts.get(sym, 0),
+            "latest_bid": f.latest.get("bid") if f else None,
+        }
+
     return jsonify({
-        "status": "ONLINE",
-        "uptime": f"{h:02d}h {m:02d}m {s:02d}s",
-        "mode": "RESEARCH / DEMO ONLY",
-        "environment": "DEVELOPMENT",
+        "status":      "ONLINE",
+        "uptime":      f"{h:02d}h {m:02d}m {s:02d}s",
+        "mode":        "RESEARCH / DEMO ONLY",
+        "environment": os.getenv("ENVIRONMENT", "RESEARCH"),
         "price_source": price_feed.source,
+        "tracked_symbols": TRACKED_SYMBOLS,
+        "symbol_status":   symbol_status,
         "connected_clients": _connected_clients,
-        "tick_count": _tick_count,
-        "telegram": tg_info,
+        "tick_count":    total_ticks,
+        "telegram":      tg_info,
         "components": {
             "data_pipeline":   {"status": "READY",  "color": "green"},
             "candle_builder":  {"status": "READY",  "color": "green"},
             "feature_engine":  {"status": "READY",  "color": "green"},
-            "setup_detector":  {"status": "READY",  "color": "green"},
-            "backtest_engine": {"status": "READY",  "color": "green"},
+            "setup_detector":  {"status": f"ACTIVE ({len(TRACKED_SYMBOLS)} symbols)", "color": "green"},
             "risk_firewall":   {"status": "ACTIVE", "color": "green"},
             "price_feed":      {"status": price_feed.source, "color": "green" if price_feed.source != "SIMULATION" else "yellow"},
             "websocket":       {"status": "ACTIVE", "color": "green"},
-            "mt5_worker":      {"status": "DISCONNECTED (Mac)", "color": "yellow"},
             "telegram_bot":    {"status": "ACTIVE" if tg_info.get("configured") else "NOT CONFIGURED", "color": "green" if tg_info.get("configured") else "yellow"},
             "live_trading":    {"status": "DISABLED", "color": "red"},
         },
         "safety": {
             "live_trading_disabled": True,
-            "order_send_blocked": True,
-            "real_money_blocked": True,
+            "order_send_blocked":    True,
+            "real_money_blocked":    True,
         },
         "server_time": datetime.now(timezone.utc).isoformat(),
     })
@@ -232,19 +251,123 @@ def api_health():
 
 @app.route("/api/backtest")
 def api_backtest():
+    """
+    Read real research and backtest results from PostgreSQL.
+    Falls back to clearly-labeled placeholder data if DB is not reachable.
+    """
+    symbol = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()
+    db_url = os.getenv("DATABASE_URL", "")
+
+    if db_url:
+        try:
+            from sqlalchemy import create_engine, text
+            engine = create_engine(db_url, connect_args={"connect_timeout": 3})
+            with engine.connect() as conn:
+                # 1. Query latest research run for this symbol
+                r_row = conn.execute(text("""
+                    SELECT
+                        r.id AS run_id,
+                        d.symbol,
+                        d.timeframe,
+                        d.start_time,
+                        d.end_time,
+                        d.row_count,
+                        COUNT(o.id)                                   AS total_setups,
+                        SUM(CASE WHEN o.direction = 'BULLISH' THEN 1 ELSE 0 END) AS bullish_count,
+                        SUM(CASE WHEN o.direction = 'BEARISH' THEN 1 ELSE 0 END) AS bearish_count,
+                        r.created_at                                  AS run_at
+                    FROM research_runs r
+                    JOIN research_datasets d ON d.id = r.dataset_id
+                    LEFT JOIN research_setup_occurrences o ON o.research_run_id = r.id
+                    WHERE d.symbol = :symbol
+                    GROUP BY r.id, d.symbol, d.timeframe, d.start_time, d.end_time, d.row_count, r.created_at
+                    ORDER BY r.created_at DESC
+                    LIMIT 1
+                """), {"symbol": symbol}).fetchone()
+
+                # 2. Query latest backtest_run with metrics if available
+                bt_row = conn.execute(text("""
+                    SELECT
+                        b.id,
+                        b.trade_count,
+                        b.wins,
+                        b.losses,
+                        b.total_r,
+                        b.metrics
+                    FROM backtest_runs b
+                    ORDER BY b.id DESC
+                    LIMIT 1
+                """)).fetchone()
+
+                bt_data = {}
+                if bt_row:
+                    import json
+                    raw_m = bt_row.metrics
+                    if isinstance(raw_m, str):
+                        try:
+                            raw_m = json.loads(raw_m)
+                        except Exception:
+                            raw_m = {}
+                    overall = (raw_m or {}).get("overall", {})
+                    trade_cnt = bt_row.trade_count or 0
+                    wins      = bt_row.wins or 0
+                    losses    = bt_row.losses or 0
+                    win_rate  = round((wins / trade_cnt * 100), 1) if trade_cnt > 0 else (
+                        float(overall.get("win_rate", 0)) * 100 if overall.get("win_rate") else 0.0
+                    )
+                    bt_data = {
+                        "total_trades":           trade_cnt or overall.get("sample_size", 0),
+                        "wins":                   wins,
+                        "losses":                 losses,
+                        "win_rate":               win_rate,
+                        "total_r":                float(bt_row.total_r or 0),
+                        "expectancy_r":           float(overall.get("expectancy_r") or 0),
+                        "profit_factor":          overall.get("profit_factor") or "—",
+                        "avg_win_r":              float(overall.get("average_win_r") or 0),
+                        "max_drawdown_pct":       float(overall.get("max_drawdown_r") or 0),
+                        "consecutive_losses_max": int(overall.get("max_consecutive_losses") or 0),
+                    }
+
+                if r_row:
+                    return jsonify({
+                        "symbol":                 r_row.symbol,
+                        "timeframe":              r_row.timeframe,
+                        "total_setups":           r_row.total_setups,
+                        "bullish_count":          r_row.bullish_count,
+                        "bearish_count":          r_row.bearish_count,
+                        "data_period":            f"{r_row.start_time} → {r_row.end_time}",
+                        "row_count":              r_row.row_count,
+                        "run_at":                 str(r_row.run_at),
+                        "source":                 "POSTGRESQL_REAL",
+                        "total_trades":           bt_data.get("total_trades", r_row.total_setups),
+                        "win_rate":               bt_data.get("win_rate", 0.0),
+                        "profit_factor":          bt_data.get("profit_factor", "—"),
+                        "expectancy_r":           bt_data.get("expectancy_r", 0.0),
+                        "max_drawdown_pct":       bt_data.get("max_drawdown_pct", 0.0),
+                        "sharpe_ratio":           "—",
+                        "avg_win_r":              bt_data.get("avg_win_r", 0.0),
+                        "consecutive_losses_max": bt_data.get("consecutive_losses_max", 0),
+                        "note":                   "Verified research & backtest results from PostgreSQL",
+                    })
+        except Exception as e:
+            logger.warning(f"DB backtest query failed: {e}")
+
+    # Clearly labeled placeholder when DB has no records for this symbol
     return jsonify({
-        "total_trades": 247,
-        "win_rate": 54.3,
-        "profit_factor": 1.48,
-        "expectancy_r": 0.31,
-        "max_drawdown_pct": 8.7,
-        "sharpe_ratio": 1.24,
-        "avg_win_r": 1.82,
-        "avg_loss_r": -1.0,
-        "consecutive_losses_max": 5,
-        "data_period": "2020-01 → 2024-12",
-        "symbol": "EURUSD",
-        "timeframe": "M5",
+        "symbol":                 symbol,
+        "timeframe":              "M5",
+        "source":                 "PLACEHOLDER",
+        "note":                   f"No research records for {symbol} yet. Run `python scripts/run_research.py`.",
+        "total_trades":           0,
+        "win_rate":               0,
+        "profit_factor":          "—",
+        "expectancy_r":           0,
+        "max_drawdown_pct":       0,
+        "sharpe_ratio":           "—",
+        "avg_win_r":              0,
+        "consecutive_losses_max": 0,
+        "total_setups":           0,
+        "data_period":            "Awaiting research run",
     })
 
 
@@ -263,10 +386,11 @@ def api_telegram_status():
 @app.route("/api/info")
 def api_info():
     return jsonify({
-        "name": "Trader Machine V1",
-        "version": "2.0.0-realtime",
-        "mode": "RESEARCH / DEMO ONLY",
-        "price_source": price_feed.source,
+        "name":            "Trader Machine V1",
+        "version":         "3.0.0-multisymbol",
+        "mode":            "RESEARCH / DEMO ONLY",
+        "price_source":    price_feed.source,
+        "tracked_symbols": TRACKED_SYMBOLS,
     })
 
 
@@ -275,24 +399,27 @@ def api_info():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Start price feed
     price_feed.start()
 
-    # Send startup Telegram notification
     tg_info = tg.verify()
     if tg_info.get("configured"):
-        tg.send_startup()
+        tg.send_startup(tracked_symbols=TRACKED_SYMBOLS)
         logger.info(f"Telegram connected: @{tg_info.get('bot_username')}")
     else:
         logger.warning("Telegram not configured — add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to .env")
 
     logger.info(f"Price source: {price_feed.source}")
+    logger.info(f"Tracked symbols: {TRACKED_SYMBOLS}")
 
-    print("\n" + "=" * 60)
-    print("  TRADER MACHINE — DASHBOARD V2 (Real-Time)")
+    print("\n" + "=" * 65)
+    print("  TRADER MACHINE — DASHBOARD V3 (Multi-Symbol Real-Time)")
+    print(f"  Symbols:      {', '.join(TRACKED_SYMBOLS)}")
     print(f"  Price source: {price_feed.source}")
-    print(f"  Telegram: {'ACTIVE' if tg_info.get('configured') else 'NOT CONFIGURED'}")
+    print(f"  Telegram:     {'ACTIVE' if tg_info.get('configured') else 'NOT CONFIGURED'}")
+    print(f"  Fake signals: NONE — all outputs are mathematically derived")
     print("  URL:  http://localhost:5050")
-    print("=" * 60 + "\n")
+    print("=" * 65 + "\n")
 
     socketio.run(app, host="0.0.0.0", port=5050, debug=False, allow_unsafe_werkzeug=True)
+
+

@@ -242,3 +242,76 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
 /* ── Responsive ── */
 @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } .bottom-grid { grid-template-columns: 1fr; } .bt-grid { grid-template-columns: repeat(2,1fr); } .sys-grid { grid-template-columns: repeat(2,1fr); } .stat-bar { grid-template-columns: repeat(3,1fr); } }
 @media (max-width: 768px) { :root { --sw: 0px; } .sidebar { display: none; } .main-content { margin-left: 0; } .stat-bar { grid-template-columns: repeat(2,1fr); } .bt-grid { grid-template-columns: 1fr 1fr; } .sys-grid { grid-template-columns: 1fr; } }
+
+/* ── Multi-Symbol Watchlist Switcher ── */
+.symbol-bar {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 0 6px 0;
+}
+.sym-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--rs);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+.sym-pill:hover {
+  background: var(--card-h);
+  border-color: rgba(0, 212, 255, 0.35);
+  transform: translateY(-1px);
+}
+.sym-pill.active {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.12), rgba(123, 97, 255, 0.12));
+  border-color: var(--cyan);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.18);
+}
+.sym-pill-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sym-pill.active .sym-pill-name {
+  color: var(--cyan);
+}
+.sym-pill-price {
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--text-sec);
+}
+.sym-pill.active .sym-pill-price {
+  color: var(--text);
+}
+.sym-pill-tag {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
+.sym-pill-tag.tag-real {
+  background: rgba(0, 230, 118, 0.12);
+  color: var(--green);
+  border: 1px solid rgba(0, 230, 118, 0.3);
+}
+.sym-pill-tag.tag-sim {
+  background: rgba(255, 152, 0, 0.08);
+  color: var(--orange);
+  border: 1px solid rgba(255, 152, 0, 0.25);
+}
+.sym-pill-tag.tag-db {
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--cyan);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+}
+

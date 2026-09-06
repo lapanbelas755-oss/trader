@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 def main():
     # 1. Setup DB
-    load_dotenv()
+    env_path = Path(__file__).parent.parent / ".env"
+    load_dotenv(dotenv_path=env_path)
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         logger.error("DATABASE_URL not found in environment.")

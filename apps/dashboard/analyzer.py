@@ -33,20 +33,33 @@ from core.structure.engine import MarketStructureEngine
 logger = logging.getLogger(__name__)
 
 
+# Per-symbol defaults for pip calculation and ATR
+_SYMBOL_DEFAULTS = {
+    "EURUSD": {"pip_multiplier": 10000, "fallback_atr": Decimal("0.00100"), "tolerance": Decimal("0.00010"), "min_disp": Decimal("0.00010")},
+    "XAUUSD": {"pip_multiplier": 100,   "fallback_atr": Decimal("2.00000"), "tolerance": Decimal("0.20000"), "min_disp": Decimal("0.10000")},
+    "GBPUSD": {"pip_multiplier": 10000, "fallback_atr": Decimal("0.00120"), "tolerance": Decimal("0.00010"), "min_disp": Decimal("0.00010")},
+    "USDJPY": {"pip_multiplier": 100,   "fallback_atr": Decimal("0.10000"), "tolerance": Decimal("0.01000"), "min_disp": Decimal("0.01000")},
+    "GBPJPY": {"pip_multiplier": 100,   "fallback_atr": Decimal("0.15000"), "tolerance": Decimal("0.01000"), "min_disp": Decimal("0.01000")},
+}
+
+
 class RealSignalAnalyzer:
     """
     Evaluates real market candles against S01-S05 setup archetypes.
     Guarantees zero random/simulated outputs.
+    Supports multiple symbols with per-symbol pip multiplier and ATR fallback.
     """
 
     def __init__(self, symbol: str = "EURUSD", timeframe: str = "M5"):
         self.symbol = symbol.strip().upper()
         self.timeframe = timeframe.strip().upper()
+        cfg = _SYMBOL_DEFAULTS.get(self.symbol, _SYMBOL_DEFAULTS["EURUSD"])
+        self.pip_multiplier = cfg["pip_multiplier"]
         self.struct_engine = MarketStructureEngine(
             left_bars=2,
             right_bars=2,
-            default_tolerance=Decimal("0.00010"),
-            default_min_displacement=Decimal("0.00010"),
+            default_tolerance=cfg["tolerance"],
+            default_min_displacement=cfg["min_disp"],
         )
         self.liq_detector = LiquidityLevelDetector(
             symbol=self.symbol,
@@ -55,9 +68,9 @@ class RealSignalAnalyzer:
         self.setup_engine = SetupDetectorEngine(
             symbol=self.symbol,
             timeframe=self.timeframe,
-            fallback_atr=Decimal("0.00100"),
+            fallback_atr=cfg["fallback_atr"],
         )
-        self._sent_signal_ids: set[str] = set()
+        self._sent_signal_ids: set = set()
 
     def compute_atr(self, candles: List[AggregatedCandle], period: int = 14) -> Decimal:
         """Calculates standard ATR(14) in Decimal."""
@@ -92,8 +105,8 @@ class RealSignalAnalyzer:
 
         # 1. Swing Highs & Lows as liquidity pools
         for s in swings[-10:]:
-            is_high = s.swing_type.value in ("HH", "LH")
-            lvl_type = LiquidityLevelType.SWING_HIGH if is_high else LiquidityLevelType.SWING_LOW
+            is_high = s.swing_type.value in ("SWING_HIGH", "HH", "LH")
+            lvl_type = LiquidityLevelType.SIGNIFICANT_SWING_HIGH if is_high else LiquidityLevelType.SIGNIFICANT_SWING_LOW
             levels.append(
                 LiquidityLevelRecord(
                     symbol=self.symbol,
@@ -102,7 +115,7 @@ class RealSignalAnalyzer:
                     price=s.price,
                     created_at=s.timestamp,
                     source_swing_id=s.swing_id,
-                    strength=s.strength,
+                    strength=Decimal("1.0000"),
                     status=LiquidityStatus.UNTOUCHED,
                 )
             )
@@ -225,40 +238,56 @@ class RealSignalAnalyzer:
         for s in detected_records:
             if s.status in (SetupStatus.ARMED, SetupStatus.FIRE):
                 highest_status = s.status.value
-                mid = float(latest_c.close)
+                mid   = float(latest_c.close)
                 atr_f = float(atr)
                 direction_str = "BUY" if s.direction == SetupDirection.BULLISH else "SELL"
 
-                # Standard sniper risk parameter: 1.2 * ATR SL, 2R TP target
-                sl_dist = max(atr_f * 1.2, 0.00100)
+                # Sniper risk: 1.2 × ATR SL, 2R TP
+                # Minimum SL: 1 pip per symbol
+                min_sl = 1.0 / self.pip_multiplier
+                sl_dist = max(atr_f * 1.2, min_sl)
                 tp_dist = sl_dist * 2.0
-                entry = round(mid, 5)
-                sl = round(entry - sl_dist if direction_str == "BUY" else entry + sl_dist, 5)
-                tp = round(entry + tp_dist if direction_str == "BUY" else entry - tp_dist, 5)
 
-                confidence = int(s.evidence.confidence_score * 100) if s.evidence.confidence_score else 85
+                # Round to appropriate decimals per symbol
+                dec = len(str(mid).split(".")[1]) if "." in str(mid) else 5
+                dec = min(dec, 5)
+                entry = round(mid, dec)
+                sl    = round(entry - sl_dist if direction_str == "BUY" else entry + sl_dist, dec)
+                tp    = round(entry + tp_dist if direction_str == "BUY" else entry - tp_dist, dec)
 
-                sig_id = f"SIG-{s.setup_code.value}-{int(eval_time.timestamp())}"
+                sl_pips = round(abs(entry - sl) * self.pip_multiplier, 1)
+                tp_pips = round(abs(tp - entry) * self.pip_multiplier, 1)
+
+                # Confluence-based confidence derived deterministically from confirmed evidence
+                ev_items = s.evidence.to_evidence_items()
+                confidence = min(95, 60 + len(ev_items) * 7) if ev_items else (90 if s.status == SetupStatus.FIRE else 80)
+
+                sig_id = f"SIG-{self.symbol}-{s.setup_code.value}-{int(eval_time.timestamp())}"
                 should_notify_telegram = sig_id not in self._sent_signal_ids
 
                 actionable_signals.append({
-                    "id": sig_id,
-                    "setup": f"{s.setup_code.value} {s.liquidity_type or 'Reversal'}",
-                    "direction": direction_str,
+                    "id":         sig_id,
+                    "symbol":     self.symbol,
+                    "setup":      f"{s.setup_code.value} {s.liquidity_type or 'Reversal'}",
+                    "direction":  direction_str,
                     "confidence": confidence,
-                    "regime": s.regime,
-                    "session": "ACTIVE",
-                    "entry": entry,
-                    "sl": sl,
-                    "tp": tp,
-                    "state": s.status.value,
-                    "timestamp": eval_time.isoformat(),
+                    "regime":     s.regime,
+                    "session":    "ACTIVE",
+                    "entry":      entry,
+                    "sl":         sl,
+                    "tp":         tp,
+                    "sl_pips":    sl_pips,
+                    "tp_pips":    tp_pips,
+                    "state":      s.status.value,
+                    "timestamp":  eval_time.isoformat(),
                     "should_notify": should_notify_telegram,
                     "evidence": [
+                        f"Symbol: {self.symbol}",
                         f"Setup: {s.setup_code.value}",
                         f"Liquidity Pool: {s.liquidity_type or 'Confirmed Level'}",
                         f"Structure Displacement: {s.structure_type or 'Confirmed Break'}",
-                        f"ATR(14): {round(atr_f, 5)}",
+                        f"ATR(14): {round(atr_f, dec)}",
+                        f"SL: {sl_pips} pips | TP: {tp_pips} pips (2R)",
                     ],
                 })
             elif s.status == SetupStatus.WATCH and highest_status == "WAIT":

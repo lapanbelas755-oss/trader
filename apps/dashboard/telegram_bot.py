@@ -5,6 +5,7 @@ Sends trading signals and system alerts to a Telegram chat.
 Configuration (via .env):
   TELEGRAM_BOT_TOKEN  = 123456789:ABCdef...
   TELEGRAM_CHAT_ID    = -100123456789   (group) or 123456789 (private)
+  TRACKED_SYMBOLS     = EURUSD,XAUUSD,GBPUSD,USDJPY,GBPJPY
 """
 
 import os
@@ -19,8 +20,26 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 
-_BASE_URL = f"https://api.telegram.org/bot{{}}/sendMessage"
-_lock = threading.Lock()
+_BASE_URL = "https://api.telegram.org/bot{}/sendMessage"
+_lock     = threading.Lock()
+
+# Symbol display names
+_SYMBOL_DISPLAY = {
+    "EURUSD": "EUR/USD",
+    "XAUUSD": "XAU/USD (Gold)",
+    "GBPUSD": "GBP/USD",
+    "USDJPY": "USD/JPY",
+    "GBPJPY": "GBP/JPY",
+}
+
+# Pip multiplier per symbol type (for pip value display)
+_PIP_MULTIPLIER = {
+    "EURUSD": 10000,
+    "XAUUSD": 100,
+    "GBPUSD": 10000,
+    "USDJPY": 100,
+    "GBPJPY": 100,
+}
 
 
 def _is_configured() -> bool:
@@ -56,7 +75,12 @@ def _send(text: str, parse_mode: str = "HTML") -> bool:
 
 
 def send_signal(signal: dict) -> bool:
-    """Send a formatted trading signal notification."""
+    """
+    Send a formatted trading signal notification.
+    Uses dynamic symbol from signal dict.
+    Pips are formatted correctly per symbol type (Forex vs Gold/JPY).
+    """
+    symbol    = signal.get("symbol", "EURUSD").upper()
     direction = signal.get("direction", "WAIT")
     setup     = signal.get("setup", "Unknown")
     confidence= signal.get("confidence", 0)
@@ -67,22 +91,28 @@ def send_signal(signal: dict) -> bool:
     sl        = signal.get("sl", 0)
     tp        = signal.get("tp", 0)
 
-    dir_emoji = {"BUY": "🟢", "SELL": "🔴", "WAIT": "🟡"}.get(direction, "⚪")
+    # Use pre-computed pip values if available, otherwise calculate
+    pip_mul  = _PIP_MULTIPLIER.get(symbol, 10000)
+    sl_pips  = signal.get("sl_pips") or round(abs(entry - sl) * pip_mul, 1)
+    tp_pips  = signal.get("tp_pips") or round(abs(tp - entry) * pip_mul, 1)
+
+    sym_display = _SYMBOL_DISPLAY.get(symbol, symbol)
+    dir_emoji   = {"BUY": "🟢", "SELL": "🔴", "WAIT": "🟡"}.get(direction, "⚪")
     state_emoji = {"ARMED": "🎯", "WATCH": "👁", "OBSERVE": "🔍", "FIRE": "🔥"}.get(state, "⏳")
 
-    sl_pips  = round(abs(entry - sl) * 10000, 1) if entry and sl else 0
-    tp_pips  = round(abs(tp - entry) * 10000, 1) if entry and tp else 0
+    # Format price decimal places per symbol
+    price_fmt = ".2f" if symbol == "XAUUSD" else (".3f" if symbol in ("USDJPY", "GBPJPY") else ".5f")
 
     text = (
         f"<b>⚡ TRADER MACHINE SIGNAL</b>\n"
         f"{'─' * 28}\n"
-        f"📊 <b>EUR/USD</b>\n"
+        f"📊 <b>{sym_display}</b>\n"
         f"{dir_emoji} <b>Direction: {direction}</b>\n"
         f"{state_emoji} State: <code>{state}</code>\n"
         f"\n"
-        f"📍 Entry:  <code>{entry:.5f}</code>\n"
-        f"🛑 SL:     <code>{sl:.5f}</code> ({sl_pips} pips)\n"
-        f"🎯 TP:     <code>{tp:.5f}</code> ({tp_pips} pips)\n"
+        f"📍 Entry:  <code>{entry:{price_fmt}}</code>\n"
+        f"🛑 SL:     <code>{sl:{price_fmt}}</code> ({sl_pips} pips)\n"
+        f"🎯 TP:     <code>{tp:{price_fmt}}</code> ({tp_pips} pips)\n"
         f"\n"
         f"📈 Setup:      {setup}\n"
         f"🌍 Regime:     <code>{regime}</code>\n"
@@ -109,12 +139,18 @@ def send_alert(level: str, message: str) -> bool:
     return _send(text)
 
 
-def send_startup() -> bool:
-    """Send a startup notification."""
+def send_startup(tracked_symbols: Optional[list] = None) -> bool:
+    """Send a startup notification listing all monitored symbols."""
+    raw = os.getenv("TRACKED_SYMBOLS", "EURUSD,XAUUSD,GBPUSD,USDJPY,GBPJPY")
+    symbols = tracked_symbols or [s.strip().upper() for s in raw.split(",") if s.strip()]
+    sym_lines = "\n".join(
+        f"  • <code>{_SYMBOL_DISPLAY.get(s, s)}</code>" for s in symbols
+    )
     text = (
         f"🚀 <b>TRADER MACHINE ONLINE</b>\n"
         f"{'─' * 28}\n"
-        f"📊 Symbol:  <code>EURUSD</code>\n"
+        f"📊 Monitoring {len(symbols)} symbols:\n"
+        f"{sym_lines}\n"
         f"⏰ TF:      <code>M5</code>\n"
         f"🔬 Mode:    <code>RESEARCH / DEMO ONLY</code>\n"
         f"🛡️ Trading: <code>DISABLED</code>\n"
@@ -144,17 +180,19 @@ def verify() -> dict:
             "error": "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set in .env",
         }
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMe"
+        url  = f"https://api.telegram.org/bot{BOT_TOKEN}/getMe"
         resp = requests.get(url, timeout=5)
         data = resp.json()
         if data.get("ok"):
             bot = data["result"]
             return {
-                "configured": True,
-                "bot_username": bot.get("username"),
-                "bot_name": bot.get("first_name"),
-                "chat_id": CHAT_ID,
+                "configured":    True,
+                "bot_username":  bot.get("username"),
+                "bot_name":      bot.get("first_name"),
+                "chat_id":       CHAT_ID,
             }
         return {"configured": False, "error": data.get("description", "Unknown")}
     except Exception as e:
         return {"configured": False, "error": str(e)}
+
+
