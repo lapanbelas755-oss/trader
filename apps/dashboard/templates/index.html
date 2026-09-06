@@ -162,11 +162,24 @@
               <span id="chart-title">EUR/USD — M5 Live Chart</span>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
+              <span class="chip chip-smc" id="smc-chip">SMC ACTIVE</span>
               <span class="chip chip-sim" id="data-source-chip">SIMULATED</span>
               <span class="chip chip-rt">LIVE</span>
             </div>
           </div>
-          <div id="chart" style="height:340px;"></div>
+          <!-- SMC Legend Bar -->
+          <div class="smc-legend-bar" id="smc-legend-bar">
+            <span class="smc-legend-item"><span class="smc-dot dot-zigzag"></span> ZigZag (Swings)</span>
+            <span class="smc-legend-item"><span class="smc-dot dot-msb-bull"></span> MSB Bull</span>
+            <span class="smc-legend-item"><span class="smc-dot dot-msb-bear"></span> MSB Bear</span>
+            <span class="smc-legend-item"><span class="smc-dot dot-bu-ob"></span> Bu-OB</span>
+            <span class="smc-legend-item"><span class="smc-dot dot-be-ob"></span> Be-OB</span>
+            <span class="smc-legend-item"><span class="smc-dot dot-bu-bb"></span> Bu-BB</span>
+          </div>
+          <div class="chart-container-relative" style="position:relative;height:340px;width:100%;">
+            <div id="chart" style="height:340px;width:100%;"></div>
+            <canvas id="smc-canvas" style="position:absolute;top:0;left:0;width:100%;height:340px;pointer-events:none;z-index:5;"></canvas>
+          </div>
         </div>
 
         <!-- Signals -->

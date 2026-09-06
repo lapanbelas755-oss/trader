@@ -83,6 +83,7 @@ socket.on("candles_full", (data) => {
     try {
       candleSeries.setData(data.candles);
       if (chart) chart.timeScale().fitContent();
+      if (data.smc) updateSMCOverlays(data.smc);
     } catch (e) {
       console.warn("Candle set error:", e);
     }
@@ -97,6 +98,7 @@ socket.on("signals_update", (data) => {
   if (sym === currentSymbol) {
     renderSignalsMini(data.signals || []);
     renderSignalsFull(data.signals || []);
+    if (data.smc) updateSMCOverlays(data.smc);
 
     const n = data.count || 0;
     const badge = document.getElementById("signal-count-badge");
@@ -188,9 +190,12 @@ function updateStatBar(d, cfg) {
   set("s-ticks",  tickCount);
 }
 
-// ── Chart ─────────────────────────────────────────────────────────────────────
+// ── Chart & SMC Visual Overlay ────────────────────────────────────────────────
 let chart = null;
 let candleSeries = null;
+let zigzagSeries = null;
+let msbPriceLines = [];
+let latestSMC = null;
 
 function initChart() {
   const el = document.getElementById("chart");
@@ -206,14 +211,146 @@ function initChart() {
     height: 340,
   });
 
+  // 1. Candlestick Series
   candleSeries = chart.addCandlestickSeries({
     upColor: "#00e676", downColor: "#ff4d6d",
     borderUpColor: "#00e676", borderDownColor: "#ff4d6d",
     wickUpColor: "#00e676", wickDownColor: "#ff4d6d",
   });
 
+  // 2. Blue ZigZag Structure Series (connecting Swings)
+  zigzagSeries = chart.addLineSeries({
+    color: "#2979ff",
+    lineWidth: 2,
+    lineStyle: LightweightCharts.LineStyle.Solid,
+    crosshairMarkerVisible: true,
+    priceLineVisible: false,
+    lastValueVisible: false,
+  });
+
+  setupSMCCanvas();
+
+  // Redraw canvas on chart scroll/pan/zoom
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+    requestAnimationFrame(redrawSMCCanvas);
+  });
+
   window.addEventListener("resize", () => {
-    if (chart && el) chart.applyOptions({ width: el.offsetWidth });
+    if (chart && el) {
+      chart.applyOptions({ width: el.offsetWidth });
+      resizeSMCCanvas();
+      requestAnimationFrame(redrawSMCCanvas);
+    }
+  });
+}
+
+function setupSMCCanvas() {
+  const canvas = document.getElementById("smc-canvas");
+  const chartEl = document.getElementById("chart");
+  if (!canvas || !chartEl) return;
+  canvas.width = chartEl.offsetWidth || 600;
+  canvas.height = chartEl.offsetHeight || 340;
+}
+
+function resizeSMCCanvas() {
+  const canvas = document.getElementById("smc-canvas");
+  const chartEl = document.getElementById("chart");
+  if (!canvas || !chartEl) return;
+  canvas.width = chartEl.offsetWidth;
+  canvas.height = chartEl.offsetHeight || 340;
+}
+
+function updateSMCOverlays(smc) {
+  if (!smc) return;
+  latestSMC = smc;
+
+  // 1. Update Blue ZigZag Line
+  if (zigzagSeries && Array.isArray(smc.zigzag)) {
+    try {
+      const pts = smc.zigzag
+        .filter(p => p.time && p.value != null)
+        .map(p => ({ time: Number(p.time), value: Number(p.value) }));
+      zigzagSeries.setData(pts);
+    } catch (e) {
+      console.debug("Zigzag set error:", e);
+    }
+  }
+
+  // 2. Update MSB Horizontal Lines
+  if (candleSeries && Array.isArray(smc.msb_lines)) {
+    msbPriceLines.forEach(pl => {
+      try { candleSeries.removePriceLine(pl); } catch (e) {}
+    });
+    msbPriceLines = [];
+
+    smc.msb_lines.slice(-4).forEach(item => {
+      try {
+        const isBull = (item.type === "MSB_BULLISH");
+        const pl = candleSeries.createPriceLine({
+          price: Number(item.price),
+          color: isBull ? "#00e676" : "#ff4d6d",
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: isBull ? "MSB (Bull)" : "MSB (Bear)",
+        });
+        msbPriceLines.push(pl);
+      } catch (e) {}
+    });
+  }
+
+  // 3. Redraw Canvas Boxes (Bu-OB, Be-OB, Bu-BB, Be-MB)
+  requestAnimationFrame(redrawSMCCanvas);
+}
+
+function redrawSMCCanvas() {
+  const canvas = document.getElementById("smc-canvas");
+  if (!canvas || !chart || !candleSeries || !latestSMC) return;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const orderBlocks   = latestSMC.order_blocks || [];
+  const breakerBlocks = latestSMC.breaker_blocks || [];
+  const allZones      = [...orderBlocks, ...breakerBlocks];
+  const chartWidth    = canvas.width;
+  const timeScale     = chart.timeScale();
+
+  allZones.forEach(zone => {
+    if (zone.top == null || zone.bottom == null || !zone.start_time) return;
+
+    let x1 = timeScale.timeToCoordinate(Number(zone.start_time));
+    let x2 = zone.end_time ? timeScale.timeToCoordinate(Number(zone.end_time)) : null;
+
+    if (x1 == null) x1 = 0;
+    if (x2 == null || isNaN(x2)) x2 = chartWidth - 55; // Leave margin for right price axis
+
+    let y1 = candleSeries.priceToCoordinate(Number(zone.top));
+    let y2 = candleSeries.priceToCoordinate(Number(zone.bottom));
+
+    if (y1 == null || y2 == null || isNaN(y1) || isNaN(y2)) return;
+
+    const topY = Math.min(y1, y2);
+    const boxH = Math.max(Math.abs(y2 - y1), 4);
+    const boxW = Math.max(x2 - x1, 20);
+
+    // Draw shaded rectangle
+    ctx.fillStyle = zone.color || "rgba(0, 230, 118, 0.22)";
+    ctx.fillRect(x1, topY, boxW, boxH);
+
+    // Draw border
+    ctx.strokeStyle = zone.border_color || "#00e676";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x1, topY, boxW, boxH);
+
+    // Draw label tag (e.g. Bu-OB, Be-OB, Bu-BB, Be-MB)
+    ctx.fillStyle = zone.border_color || "#ffffff";
+    ctx.font = "bold 10px 'JetBrains Mono', monospace";
+    const labelX = Math.max(x1 + 6, 8);
+    const labelY = Math.min(topY + 12, canvas.height - 6);
+    ctx.fillText(zone.label || zone.type, labelX, labelY);
   });
 }
 
@@ -249,6 +386,16 @@ function setSymbol(sym) {
       if (d && d.bid) {
         updatePrice(d, cfg);
         updateStatBar(d, cfg);
+      }
+    })
+    .catch(() => {});
+
+  // Fetch SMC structure overlays immediately
+  fetch(`/api/smc?symbol=${sym}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.smc) {
+        updateSMCOverlays(d.smc);
       }
     })
     .catch(() => {});
@@ -289,30 +436,37 @@ function renderSignalsMini(signals) {
   const el = document.getElementById("signals-mini");
   if (!el) return;
   if (!signals.length) {
-    el.innerHTML = `<div class="empty">No active signals — Sniper waiting for strict confluence</div>`;
+    el.innerHTML = `<div class="empty">No active signals — Sniper waiting for strict SMC confluence & momentum</div>`;
     return;
   }
-  el.innerHTML = signals.map(s => `
+  el.innerHTML = signals.map(s => {
+    const isMom = (s.momentum === "CONFIRMED");
+    return `
     <div class="sig-item">
       <div class="sig-badge ${dirBadgeClass(s.direction)}">${s.direction}</div>
       <div class="sig-info">
         <div class="sig-name">${s.setup}</div>
         <div class="sig-tags">
           <span class="stag">${s.symbol}</span>
-          <span class="stag">${s.regime}</span>
+          <span class="stag stag-rr">${s.rr_ratio || "1:3 RR"}</span>
+          <span class="stag ${isMom ? 'stag-mom' : 'stag-pending'}">${isMom ? '⚡ MOMENTUM' : '⏳ PENDING MOM'}</span>
           <span class="stag">${s.state}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-sec);font-family:'JetBrains Mono',monospace;margin-top:2px;">
+          SL: ${s.sl_pips}p | TP: ${s.tp_pips}p (1:3+)
         </div>
         <div class="sig-conf">${s.confidence}%</div>
         <div class="conf-bar"><div class="conf-fill" style="width:${s.confidence}%"></div></div>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function renderSignalsFull(signals) {
   const el = document.getElementById("signals-full");
   if (!el) return;
   if (!signals.length) {
-    el.innerHTML = `<div class="empty" style="padding:40px;">No active signals — Sniper waiting for strict setup confirmation (S01–S05)</div>`;
+    el.innerHTML = `<div class="empty" style="padding:40px;">No active signals — Sniper waiting for strict setup confirmation (S01–S05 with 1:3+ RR)</div>`;
     return;
   }
   el.innerHTML = signals.map(s => {
@@ -321,6 +475,7 @@ function renderSignalsFull(signals) {
     const dec = cfg.decimals;
     const sl_pips = s.sl_pips != null ? s.sl_pips : (s.entry && s.sl ? Math.abs(s.entry - s.sl) * cfg.pipMul : 0);
     const tp_pips = s.tp_pips != null ? s.tp_pips : (s.entry && s.tp ? Math.abs(s.tp - s.entry) * cfg.pipMul : 0);
+    const isMom   = (s.momentum === "CONFIRMED");
     const evList  = s.evidence || [];
 
     return `
@@ -330,13 +485,14 @@ function renderSignalsFull(signals) {
         <div class="sig-name" style="font-size:14px;margin-bottom:8px;">${s.setup}</div>
         <div class="sig-tags">
           <span class="stag" style="color:var(--cyan);font-weight:700;">${sym}</span>
-          <span class="stag">Regime: ${s.regime}</span>
+          <span class="stag stag-rr">R:R ${s.rr_ratio || "1:3"}</span>
+          <span class="stag ${isMom ? 'stag-mom' : 'stag-pending'}">${isMom ? '⚡ MOMENTUM CONFIRMED' : '⏳ PENDING MOMENTUM'}</span>
           <span class="stag">State: ${s.state}</span>
         </div>
         <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:1.8;">
           Entry: <span style="color:var(--text)">${Number(s.entry).toFixed(dec)}</span> &nbsp;|&nbsp;
           SL: <span style="color:var(--red)">${Number(s.sl).toFixed(dec)}</span> (${Number(sl_pips).toFixed(1)}p) &nbsp;|&nbsp;
-          TP: <span style="color:var(--green)">${Number(s.tp).toFixed(dec)}</span> (${Number(tp_pips).toFixed(1)}p)
+          TP: <span style="color:var(--green)">${Number(s.tp).toFixed(dec)}</span> (${Number(tp_pips).toFixed(1)}p — 1:3 RR)
         </div>
         <div style="margin-top:8px;">
           ${evList.map(e => `<div style="font-size:11px;color:var(--text-sec);margin-top:3px;">• ${e}</div>`).join("")}

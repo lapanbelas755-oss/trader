@@ -315,3 +315,59 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
   border: 1px solid rgba(0, 212, 255, 0.3);
 }
 
+/* ── SMC Legend & Visual Overlays ── */
+.chip-smc {
+  background: rgba(41, 121, 255, 0.12);
+  color: #2979ff;
+  border: 1px solid rgba(41, 121, 255, 0.35);
+  font-weight: 700;
+}
+.smc-legend-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-sec);
+  flex-wrap: wrap;
+}
+.smc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.smc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.dot-zigzag   { background: #2979ff; }
+.dot-msb-bull { background: #00e676; }
+.dot-msb-bear { background: #ff4d6d; }
+.dot-bu-ob    { background: rgba(0, 230, 118, 0.4); border: 1px solid #00e676; }
+.dot-be-ob    { background: rgba(255, 77, 109, 0.4); border: 1px solid #ff4d6d; }
+.dot-bu-bb    { background: rgba(0, 176, 255, 0.4); border: 1px solid #00b0ff; }
+
+/* ── SMC Signal Badges ── */
+.stag-rr {
+  background: rgba(0, 212, 255, 0.12) !important;
+  color: var(--cyan) !important;
+  border: 1px solid rgba(0, 212, 255, 0.35) !important;
+  font-weight: 700;
+}
+.stag-mom {
+  background: rgba(0, 230, 118, 0.12) !important;
+  color: var(--green) !important;
+  border: 1px solid rgba(0, 230, 118, 0.35) !important;
+  font-weight: 700;
+}
+.stag-pending {
+  background: rgba(255, 214, 0, 0.08) !important;
+  color: var(--yellow) !important;
+  border: 1px solid rgba(255, 214, 0, 0.25) !important;
+}
+
+

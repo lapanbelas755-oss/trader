@@ -127,6 +127,9 @@ def send_signal(signal: dict) -> bool:
         except Exception:
             candle_line = f"🕯️ Candle:     <code>{raw_ts}</code>\n"
 
+    rr_str = signal.get("rr_ratio", "1:3")
+    momentum_str = signal.get("momentum", "CONFIRMED")
+
     text = (
         f"<b>⚡ TRADER MACHINE SIGNAL</b>\n"
         f"{'─' * 28}\n"
@@ -134,11 +137,12 @@ def send_signal(signal: dict) -> bool:
         f"{dir_emoji} <b>Direction: {direction}</b>\n"
         f"{state_emoji} State: <code>{state}</code>\n"
         f"\n"
-        f"📍 Entry:  <code>{entry:{price_fmt}}</code>\n"
-        f"🛑 SL:     <code>{sl:{price_fmt}}</code> ({sl_pips} pips)\n"
-        f"🎯 TP:     <code>{tp:{price_fmt}}</code> ({tp_pips} pips)\n"
+        f"📍 Entry:      <code>{entry:{price_fmt}}</code>\n"
+        f"🛑 SL:         <code>{sl:{price_fmt}}</code> ({sl_pips} pips)\n"
+        f"🎯 TP:         <code>{tp:{price_fmt}}</code> ({tp_pips} pips — {rr_str} RR)\n"
         f"\n"
         f"📈 Setup:      {setup}\n"
+        f"⚡ Momentum:   <code>{momentum_str}</code>\n"
         f"🌍 Regime:     <code>{regime}</code>\n"
         f"⏰ Session:    <code>{session}</code>\n"
         f"🔥 Confidence: <b>{confidence}%</b>\n"

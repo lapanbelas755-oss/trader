@@ -112,6 +112,7 @@ def _make_on_tick(symbol: str):
             "status":        system_status,
             "reason":        system_reason,
             "metrics":       analysis.get("metrics", {}),
+            "smc":           analysis.get("smc", {}),
             "market_open":   is_open,
             "market_status": market_msg,
         })
@@ -184,10 +185,14 @@ def on_connect():
     default_feed = price_feed.get_feed(TRACKED_SYMBOLS[0])
     if default_feed:
         candles = default_feed.get_candles()
+        sym = TRACKED_SYMBOLS[0]
+        analyzer = _analyzers.get(sym)
+        smc_data = analyzer.analyze(candles).get("smc", {}) if (analyzer and candles) else {}
         emit("candles_full", {
             "candles":   candles,
-            "symbol":    TRACKED_SYMBOLS[0],
+            "symbol":    sym,
             "timeframe": "M5",
+            "smc":       smc_data,
         })
 
 
@@ -203,7 +208,14 @@ def on_request_candles(data=None):
     symbol = (data or {}).get("symbol", TRACKED_SYMBOLS[0])
     sym_feed = price_feed.get_feed(symbol)
     candles  = sym_feed.get_candles() if sym_feed else []
-    emit("candles_full", {"candles": candles, "symbol": symbol, "timeframe": "M5"})
+    analyzer = _analyzers.get(symbol)
+    smc_data = analyzer.analyze(candles).get("smc", {}) if (analyzer and candles) else {}
+    emit("candles_full", {
+        "candles":   candles,
+        "symbol":    symbol,
+        "timeframe": "M5",
+        "smc":       smc_data,
+    })
 
 
 @socketio.on("send_test_telegram")
@@ -446,6 +458,18 @@ def api_info():
         "market_status":            market_msg,
         "telegram_signals_enabled": tg.are_signals_enabled(),
     })
+
+
+@app.route("/api/smc")
+def api_smc():
+    symbol = request.args.get("symbol", TRACKED_SYMBOLS[0]).upper()
+    analyzer = _analyzers.get(symbol)
+    sym_feed = price_feed.get_feed(symbol)
+    candles  = sym_feed.get_candles() if sym_feed else []
+    if analyzer and candles:
+        analysis = analyzer.analyze(candles)
+        return jsonify({"symbol": symbol, "smc": analysis.get("smc", {})})
+    return jsonify({"symbol": symbol, "smc": {}})
 
 
 # ---------------------------------------------------------------------------

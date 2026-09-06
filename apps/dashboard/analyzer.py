@@ -29,6 +29,7 @@ from core.setups.contract import (
 from core.setups.engine import SetupDetectorEngine
 from core.structure.contract import ConfirmedSwing, StructureEvent
 from core.structure.engine import MarketStructureEngine
+from core.structure.smc import SMCEngine
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class RealSignalAnalyzer:
             timeframe=self.timeframe,
             fallback_atr=cfg["fallback_atr"],
         )
+        self.smc_engine = SMCEngine()
         self._sent_signal_ids: set = set()
         self._cooldowns: dict = {}
 
@@ -232,24 +234,68 @@ class RealSignalAnalyzer:
             structure_events=struct_events,
         )
 
-        # 6. Filter for High-Quality ARMED & FIRE Setups
-        actionable_signals: List[Dict[str, Any]] = []
+        # 6. Extract Smart Money Concepts (SMC) Structure Overlays
+        atr_f = float(atr)
+        zigzag_points = self.smc_engine.extract_zigzag(classified_swings)
+        msb_lines = self.smc_engine.extract_msb_lines(struct_events, candles)
+        order_blocks = self.smc_engine.detect_order_blocks(candles, atr=atr_f)
+        breaker_blocks = self.smc_engine.detect_breaker_blocks(candles, order_blocks)
+
+        smc_data = {
+            "zigzag": zigzag_points,
+            "msb_lines": msb_lines,
+            "order_blocks": order_blocks,
+            "breaker_blocks": breaker_blocks,
+        }
+
+        # 7. Deduplicate & Validate Setups with Momentum & 1:3+ RR
+        # Group candidates by (setup_code, direction) to eliminate redundant duplicates
+        dedup_candidates: Dict[str, Any] = {}
         highest_status = "WAIT"
 
         for s in detected_records:
-            if s.status in (SetupStatus.ARMED, SetupStatus.FIRE):
-                highest_status = s.status.value
-                mid   = float(latest_c.close)
-                atr_f = float(atr)
+            if s.status in (SetupStatus.ARMED, SetupStatus.FIRE, SetupStatus.WATCH):
                 direction_str = "BUY" if s.direction == SetupDirection.BULLISH else "SELL"
+                key = f"{s.setup_code.value}_{direction_str}"
+                
+                # Keep the record with higher status ranking
+                existing = dedup_candidates.get(key)
+                if not existing:
+                    dedup_candidates[key] = s
+                else:
+                    status_rank = {SetupStatus.FIRE: 3, SetupStatus.ARMED: 2, SetupStatus.WATCH: 1, SetupStatus.OBSERVE: 0}
+                    if status_rank.get(s.status, 0) > status_rank.get(existing.status, 0):
+                        dedup_candidates[key] = s
 
-                # Sniper risk: 1.2 × ATR SL, 2R TP
-                # Minimum SL: 1 pip per symbol
+        actionable_signals: List[Dict[str, Any]] = []
+
+        for key, s in dedup_candidates.items():
+            direction_str = "BUY" if s.direction == SetupDirection.BULLISH else "SELL"
+            mid = float(latest_c.close)
+            
+            # Momentum / Institutional Displacement Check
+            momentum_info = self.smc_engine.check_momentum(candles, atr=atr_f, direction=direction_str)
+            has_momentum = momentum_info["has_momentum"]
+
+            # Determine final confirmed setup state:
+            # A setup can ONLY enter FIRE state if genuine momentum / displacement is confirmed!
+            # Otherwise, it stays ARMED waiting for momentum confirmation.
+            current_status = s.status
+            if current_status == SetupStatus.FIRE and not has_momentum:
+                current_status = SetupStatus.ARMED
+
+            if current_status in (SetupStatus.ARMED, SetupStatus.FIRE):
+                if current_status.value == "FIRE":
+                    highest_status = "FIRE"
+                elif highest_status != "FIRE":
+                    highest_status = current_status.value
+
+                # Sniper Risk Management: Minimum 1:3 Risk:Reward (3R+)
+                RR_RATIO = 3.0
                 min_sl = 1.0 / self.pip_multiplier
                 sl_dist = max(atr_f * 1.2, min_sl)
-                tp_dist = sl_dist * 2.0
+                tp_dist = sl_dist * RR_RATIO
 
-                # Round to appropriate decimals per symbol
                 dec = len(str(mid).split(".")[1]) if "." in str(mid) else 5
                 dec = min(dec, 5)
                 entry = round(mid, dec)
@@ -259,18 +305,18 @@ class RealSignalAnalyzer:
                 sl_pips = round(abs(entry - sl) * self.pip_multiplier, 1)
                 tp_pips = round(abs(tp - entry) * self.pip_multiplier, 1)
 
-                # Confluence-based confidence derived deterministically from confirmed evidence
                 ev_items = s.evidence.to_evidence_items()
-                confidence = min(95, 60 + len(ev_items) * 7) if ev_items else (90 if s.status == SetupStatus.FIRE else 80)
+                confidence = min(95, 60 + len(ev_items) * 7) if ev_items else (90 if current_status == SetupStatus.FIRE else 80)
+                if has_momentum:
+                    confidence = min(95, confidence + 5)
 
                 sig_id = f"SIG-{self.symbol}-{s.setup_code.value}-{int(eval_time.timestamp())}"
-                
-                # Strict Sniper Cooldown (15 minutes per setup per symbol) & FIRE-only alerts
+
                 now_ts = time.time()
                 cooldown_key = f"{self.symbol}_{s.setup_code.value}"
                 last_sent = self._cooldowns.get(cooldown_key, 0.0)
-                is_fire = (s.status == SetupStatus.FIRE)
-                can_alert = is_fire and (now_ts - last_sent > 900) and (sig_id not in self._sent_signal_ids)
+                is_fire = (current_status == SetupStatus.FIRE)
+                can_alert = is_fire and has_momentum and (now_ts - last_sent > 900) and (sig_id not in self._sent_signal_ids)
 
                 should_notify_telegram = can_alert
                 if can_alert:
@@ -293,30 +339,37 @@ class RealSignalAnalyzer:
                     "tp":         tp,
                     "sl_pips":    sl_pips,
                     "tp_pips":    tp_pips,
-                    "state":      s.status.value,
+                    "rr_ratio":   "1:3",
+                    "momentum":   "CONFIRMED" if has_momentum else "PENDING",
+                    "momentum_score": momentum_info.get("score", 0.0),
+                    "state":      current_status.value,
                     "timestamp":  eval_time.isoformat(),
                     "should_notify": should_notify_telegram,
                     "evidence": [
                         f"Symbol: {self.symbol}",
                         f"Setup: {s.setup_code.value}",
                         f"Liquidity Pool: {raw_liq}",
-                        f"Structure Displacement: {raw_struct}",
-                        f"ATR(14): {round(atr_f, dec)}",
-                        f"SL: {sl_pips} pips | TP: {tp_pips} pips (2R)",
+                        f"Structure: {raw_struct}",
+                        f"Risk/Reward: 1:3 RR ({sl_pips}p SL / {tp_pips}p TP)",
+                        f"Momentum: {'CONFIRMED (' + str(momentum_info['score']) + 'x ATR)' if has_momentum else 'PENDING'}",
+                        f"SMC Zones: {len(order_blocks)} OBs, {len(breaker_blocks)} BBs active",
                     ],
                 })
-            elif s.status == SetupStatus.WATCH and highest_status == "WAIT":
+            elif current_status == SetupStatus.WATCH and highest_status == "WAIT":
                 highest_status = "WATCH"
 
         return {
             "status": highest_status,
-            "reason": "Sniper waiting for strict confluence" if not actionable_signals else f"{len(actionable_signals)} verified setups active",
+            "reason": "Sniper waiting for strict confluence & momentum" if not actionable_signals else f"{len(actionable_signals)} verified setups active (1:3+ RR)",
             "signals": actionable_signals,
+            "smc": smc_data,
             "metrics": {
                 "atr": float(atr),
                 "swings_detected": len(swings),
                 "structure_events": len(struct_events),
                 "liquidity_levels": len(liquidity_levels),
+                "order_blocks": len(order_blocks),
+                "breaker_blocks": len(breaker_blocks),
                 "last_close": float(latest_c.close),
                 "eval_timestamp": eval_time.isoformat(),
             },
