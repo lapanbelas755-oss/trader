@@ -330,10 +330,10 @@ def fetch_mt5_worker_tick(symbol: str) -> Optional[dict]:
             )
             signed_req = HMACRequestSigner.sign_request(req, secret)
             url  = f"http://{host}:{p}/api/v3/request"
-            resp = requests.post(url, json=signed_req.model_dump(), timeout=1.5)
+            resp = requests.post(url, json=signed_req.model_dump(mode="json"), timeout=2.5)
             if resp.status_code == 200:
                 data = resp.json()
-                if data.get("status") == "SUCCESS" and "payload" in data:
+                if data.get("status") == "SUCCESS" and "payload" in data and data["payload"]:
                     payload = data["payload"]
                     bid  = float(payload["bid"])
                     ask  = float(payload["ask"])

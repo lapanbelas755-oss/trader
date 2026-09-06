@@ -37,7 +37,7 @@ class WorkerConfig(BaseModel):
     hmac_secret: str = Field(..., description="Pre-shared symmetric key for HMAC-SHA256 authentication.")
     bind_host: str = Field(default="127.0.0.1")
     bind_port: int = Field(default=8080)
-    allowed_symbols: list[str] = Field(default_factory=lambda: ["EURUSD"])
+    allowed_symbols: list[str] = Field(default_factory=lambda: ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY"])
     mt5_path: Optional[str] = None
     mt5_server: Optional[str] = None
     mt5_login: Optional[int] = None
@@ -116,7 +116,7 @@ class WorkerConfig(BaseModel):
             raise ConfigurationError(f"Invalid WORKER_ENVIRONMENT: '{env_mode_str}'.")
         worker_env = WorkerEnvironment(env_mode_str)
 
-        raw_symbols = e.get("WORKER_ALLOWED_SYMBOLS", "EURUSD")
+        raw_symbols = e.get("WORKER_ALLOWED_SYMBOLS", "XAUUSD,EURUSD,GBPUSD,USDJPY,GBPJPY")
         allowed_symbols = [s.strip().upper() for s in raw_symbols.split(",") if s.strip()]
 
         try:
